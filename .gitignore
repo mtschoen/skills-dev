@@ -1,0 +1,8 @@
+# Throwaway worktrees created during skill testing
+test-sandbox/
+**/worktrees/
+
+# Captured subagent transcripts that may contain absolute paths or noise
+**/tests/results/scratch/
+
+.maintenance.json

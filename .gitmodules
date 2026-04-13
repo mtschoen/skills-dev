@@ -1,0 +1,27 @@
+[submodule "find-task"]
+	path = find-task
+	url = gitea@llamabox.local:schoen/find-task.git
+[submodule "fleet-orchestration"]
+	path = fleet-orchestration
+	url = gitea@llamabox.local:schoen/fleet-orchestration.git
+[submodule "maintaining-full-coverage"]
+	path = maintaining-full-coverage
+	url = gitea@llamabox.local:schoen/maintaining-full-coverage.git
+[submodule "project-maintenance"]
+	path = project-maintenance
+	url = gitea@llamabox.local:schoen/project-maintenance.git
+[submodule "reconcile-tasks"]
+	path = reconcile-tasks
+	url = gitea@llamabox.local:schoen/reconcile-tasks.git
+[submodule "remote-claude"]
+	path = remote-claude
+	url = gitea@llamabox.local:schoen/remote-claude.git
+[submodule "smoke-test"]
+	path = smoke-test
+	url = gitea@llamabox.local:schoen/smoke-test.git
+[submodule "unity-batchmode-worktree"]
+	path = unity-batchmode-worktree
+	url = gitea@llamabox.local:schoen/unity-batchmode-worktree.git
+[submodule "wrap"]
+	path = wrap
+	url = gitea@llamabox.local:schoen/wrap.git
