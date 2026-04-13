@@ -6,3 +6,4 @@ test-sandbox/
 **/tests/results/scratch/
 
 .maintenance.json
+.claude/
