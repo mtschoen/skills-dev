@@ -25,3 +25,6 @@
 [submodule "wrap"]
 	path = wrap
 	url = gitea@llamabox.local:schoen/wrap.git
+[submodule "pushback"]
+	path = pushback
+	url = gitea@llamabox.local:schoen/pushback.git
