@@ -28,3 +28,6 @@
 [submodule "pushback"]
 	path = pushback
 	url = gitea@llamabox.local:schoen/pushback.git
+[submodule "capture-idea"]
+	path = capture-idea
+	url = gitea@llamabox:schoen/capture-idea.git
