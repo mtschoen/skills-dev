@@ -33,10 +33,10 @@
 	url = ../skills-capture-idea.git
 [submodule "escalate-over-improvise"]
 	path = escalate-over-improvise
-	url = gitea@llamabox.internal:schoen/escalate-over-improvise.git
+	url = ../skills-escalate-over-improvise.git
 [submodule "fast-tests"]
 	path = fast-tests
-	url = gitea@llamabox.internal:schoen/fast-tests.git
+	url = ../skills-fast-tests.git
 [submodule "review-in-parallel-pipelines"]
 	path = review-in-parallel-pipelines
-	url = gitea@llamabox.internal:schoen/review-in-parallel-pipelines.git
+	url = ../skills-review-in-parallel-pipelines.git
