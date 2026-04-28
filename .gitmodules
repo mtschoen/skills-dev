@@ -1,36 +1,36 @@
 [submodule "find-task"]
 	path = find-task
-	url = gitea@llamabox.internal:schoen/find-task.git
+	url = ../skills-find-task.git
 [submodule "fleet-orchestration"]
 	path = fleet-orchestration
-	url = gitea@llamabox.internal:schoen/fleet-orchestration.git
+	url = ../skills-fleet-orchestration.git
 [submodule "maintaining-full-coverage"]
 	path = maintaining-full-coverage
-	url = gitea@llamabox.internal:schoen/maintaining-full-coverage.git
+	url = ../skills-maintaining-full-coverage.git
 [submodule "project-maintenance"]
 	path = project-maintenance
-	url = gitea@llamabox.internal:schoen/project-maintenance.git
+	url = ../skills-project-maintenance.git
 [submodule "reconcile-tasks"]
 	path = reconcile-tasks
-	url = gitea@llamabox.internal:schoen/reconcile-tasks.git
+	url = ../skills-reconcile-tasks.git
 [submodule "remote-claude"]
 	path = remote-claude
-	url = gitea@llamabox.internal:schoen/remote-claude.git
+	url = ../skills-remote-claude.git
 [submodule "smoke-test"]
 	path = smoke-test
-	url = gitea@llamabox.internal:schoen/smoke-test.git
+	url = ../skills-smoke-test.git
 [submodule "unity-batchmode-worktree"]
 	path = unity-batchmode-worktree
-	url = gitea@llamabox.internal:schoen/unity-batchmode-worktree.git
+	url = ../skills-unity-batchmode-worktree.git
 [submodule "wrap"]
 	path = wrap
-	url = gitea@llamabox.internal:schoen/wrap.git
+	url = ../skills-wrap.git
 [submodule "pushback"]
 	path = pushback
-	url = gitea@llamabox.internal:schoen/pushback.git
+	url = ../skills-pushback.git
 [submodule "capture-idea"]
 	path = capture-idea
-	url = gitea@llamabox:schoen/capture-idea.git
+	url = ../skills-capture-idea.git
 [submodule "escalate-over-improvise"]
 	path = escalate-over-improvise
 	url = gitea@llamabox.internal:schoen/escalate-over-improvise.git
