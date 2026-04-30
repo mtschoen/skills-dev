@@ -77,14 +77,21 @@ sync_dir() {
             excl_args+=(--exclude="./$e")
         done
     fi
-    tar -C "$content_dir" "${excl_args[@]}" -cf - . | tar -C "$dest" -xf -
+    tar -C "$content_dir" ${excl_args[@]+"${excl_args[@]}"} -cf - . | tar -C "$dest" -xf -
 }
 
 confirm() {
     local prompt="$1"
     if [ "$ASSUME_YES" = 1 ]; then return 0; fi
     local reply
-    read -r -p "$prompt [y/N] " reply </dev/tty
+    if [ -r /dev/tty ]; then
+        read -r -p "$prompt [y/N] " reply </dev/tty
+    elif [ -t 0 ]; then
+        read -r -p "$prompt [y/N] " reply
+    else
+        echo "  (no tty; skipping. re-run with -y to overwrite.)" >&2
+        return 1
+    fi
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 

@@ -143,8 +143,12 @@ exit /b 0
 
 :confirm
 if "!ASSUME_YES!"=="1" exit /b 0
-set "reply="
+set "reply=__NOPROMPT__"
 set /p "reply=%~1 [y/N] "
+if "!reply!"=="__NOPROMPT__" (
+    echo   ^(no tty; skipping. re-run with -y to overwrite.^) 1>&2
+    exit /b 1
+)
 if /i "!reply!"=="y" exit /b 0
 exit /b 1
 
