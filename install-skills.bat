@@ -46,10 +46,21 @@ set "EXCLUDE_FILES=.git .gitignore .gitmodules README.md AUDIT.md"
 
 if not exist "%DEST_ROOT%" mkdir "%DEST_ROOT%"
 
+set "FOUND=0"
 for /d %%D in ("%SRC_ROOT%\*") do (
     set "name=%%~nxD"
     set "src=%%~fD"
-    if exist "!src!\.git" call :maybe_install "!name!" "!src!"
+    if exist "!src!\.git" (
+        set /a FOUND+=1
+        call :maybe_install "!name!" "!src!"
+    )
+)
+
+if "!FOUND!"=="0" (
+    echo warning: no skill submodules found under %SRC_ROOT%. 1>&2
+    echo          did you forget to run 'git submodule update --init --recursive'? 1>&2
+    endlocal
+    exit /b 1
 )
 
 endlocal

@@ -148,10 +148,18 @@ install_skill() {
 
 mkdir -p "$DEST_ROOT"
 
+found=0
 for src in "$SRC_ROOT"/*/; do
     name="$(basename "$src")"
     # Only top-level git submodules.
     [ -e "$src/.git" ] || continue
+    found=$((found + 1))
     is_selected "$name" || continue
     install_skill "$name"
 done
+
+if [ "$found" = 0 ]; then
+    echo "warning: no skill submodules found under $SRC_ROOT." >&2
+    echo "         did you forget to run 'git submodule update --init --recursive'?" >&2
+    exit 1
+fi
