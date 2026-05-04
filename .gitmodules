@@ -40,3 +40,6 @@
 [submodule "review-in-parallel-pipelines"]
 	path = review-in-parallel-pipelines
 	url = ../skills-review-in-parallel-pipelines.git
+[submodule "cost-estimator"]
+	path = cost-estimator
+	url = ../skills-cost-estimator.git
