@@ -7,3 +7,6 @@ test-sandbox/
 
 .maintenance.json
 .claude/
+
+# OS noise
+.DS_Store
