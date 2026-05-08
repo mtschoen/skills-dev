@@ -19,7 +19,7 @@ Author the skill files in a temporary `running-spikes/` directory inside `skills
 **Files:**
 - Create: `running-spikes/SKILL.md`
 
-- [ ] **Step 1: Create the directory and write `SKILL.md` with the full skill text**
+- [x] **Step 1: Create the directory and write `SKILL.md` with the full skill text**
 
 ```bash
 mkdir -p running-spikes
@@ -267,7 +267,7 @@ Before reporting back to the user:
 - **Spiking on a subjective question.** "Should we use axios or fetch" doesn't have an experiment-resolvable answer about the fundamental choice — though "does fetch handle X edge case" might. Frame tightly or don't spike.
 ````
 
-- [ ] **Step 2: Verify the file was written and is well-formed**
+- [x] **Step 2: Verify the file was written and is well-formed**
 
 ```bash
 test -f running-spikes/SKILL.md && echo "OK: SKILL.md exists ($(wc -l < running-spikes/SKILL.md) lines)" || echo "FAIL: SKILL.md missing"
@@ -283,7 +283,7 @@ Expected: `OK: SKILL.md exists (~280 lines)` and the first three lines being the
 **Files:**
 - Create: `running-spikes/README.md`
 
-- [ ] **Step 1: Write the dev-facing README**
+- [x] **Step 1: Write the dev-facing README**
 
 ```markdown
 # running-spikes
@@ -306,7 +306,7 @@ See [SKILL.md](./SKILL.md) for the full skill text.
 - **License:** MIT (inherits from skills-dev).
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 test -f running-spikes/README.md && echo "OK"
@@ -319,7 +319,7 @@ test -f running-spikes/README.md && echo "OK"
 **Files:**
 - Create: `running-spikes/.gitignore`
 
-- [ ] **Step 1: Write the gitignore**
+- [x] **Step 1: Write the gitignore**
 
 ```
 workspace/
@@ -328,7 +328,7 @@ workspace/
 __pycache__/
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 test -f running-spikes/.gitignore && echo "OK"
@@ -341,7 +341,7 @@ test -f running-spikes/.gitignore && echo "OK"
 **Files:**
 - Create: `running-spikes/evals/README.md`
 
-- [ ] **Step 1: Create the evals directory and placeholder README**
+- [x] **Step 1: Create the evals directory and placeholder README**
 
 ```bash
 mkdir -p running-spikes/evals
@@ -365,7 +365,7 @@ When implemented, evals should test:
 See `pushback/evals/` for the harness pattern this should follow. Behavioral skills sometimes don't apply to the agent that authored them (see `feedback_skill_self_application.md` in cross-project memory) — qualitative real-session testing matters more than n=1 eval runs (see `feedback_no_iteration_on_n1.md`).
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 test -f running-spikes/evals/README.md && echo "OK"
@@ -375,7 +375,7 @@ test -f running-spikes/evals/README.md && echo "OK"
 
 ### Task 5: Local content sanity check
 
-- [ ] **Step 1: List the directory tree**
+- [x] **Step 1: List the directory tree**
 
 ```bash
 find running-spikes -type f | sort
@@ -389,7 +389,7 @@ running-spikes/SKILL.md
 running-spikes/evals/README.md
 ```
 
-- [ ] **Step 2: Confirm install-skills.sh would pick it up correctly (dry-run)**
+- [x] **Step 2: Confirm install-skills.sh would pick it up correctly (dry-run)**
 
 Note: `install-skills.sh` only sees skills that are listed as submodules in `.gitmodules`, so a dry run before submodule conversion will report "not initialized." That's expected — full install verification happens in Task 12 after the submodule is added. For now, just confirm the skill content has the right shape:
 
@@ -408,7 +408,7 @@ Both repos are created **before** any local commits so the local push has a targ
 
 **Files:** none locally — remote repo creation only.
 
-- [ ] **Step 1: Confirm the repo doesn't already exist**
+- [x] **Step 1: Confirm the repo doesn't already exist**
 
 The user's global CLAUDE.md authoritatively documents the current Gitea state:
 - Endpoint: `https://gitea.llamabox.internal/`
@@ -425,7 +425,7 @@ curl -sk "https://gitea.llamabox.internal/api/v1/repos/schoen/skills-running-spi
 
 Expected: `404`. If it returns `200`, the repo already exists — stop and investigate.
 
-- [ ] **Step 2: Create the repo**
+- [x] **Step 2: Create the repo**
 
 ```bash
 TOKEN=$(cat ~/.gitea-token | tr -d '\n\r')
@@ -438,7 +438,7 @@ curl -sk -X POST "https://gitea.llamabox.internal/api/v1/user/repos" \
 
 Expected: HTTP `201` and a JSON body containing `"full_name":"schoen/skills-running-spikes"`.
 
-- [ ] **Step 3: Sanity-check the new repo**
+- [x] **Step 3: Sanity-check the new repo**
 
 ```bash
 TOKEN=$(cat ~/.gitea-token | tr -d '\n\r')
@@ -454,7 +454,7 @@ Expected: `"full_name":"schoen/skills-running-spikes"`.
 
 **Files:** none locally — remote repo creation only.
 
-- [ ] **Step 1: Confirm `gh` is authenticated as `mtschoen`**
+- [x] **Step 1: Confirm `gh` is authenticated as `mtschoen`**
 
 ```bash
 gh auth status
@@ -462,7 +462,7 @@ gh auth status
 
 Expected: confirmation that `gh` is logged in as `mtschoen`.
 
-- [ ] **Step 2: Create the repo**
+- [x] **Step 2: Create the repo**
 
 ```bash
 gh repo create mtschoen/skills-running-spikes \
@@ -472,7 +472,7 @@ gh repo create mtschoen/skills-running-spikes \
 
 Expected: a URL like `https://github.com/mtschoen/skills-running-spikes`.
 
-- [ ] **Step 3: Sanity-check**
+- [x] **Step 3: Sanity-check**
 
 ```bash
 gh repo view mtschoen/skills-running-spikes --json name,visibility,description
@@ -491,14 +491,14 @@ Following the workflow at `~/.claude/projects/C--Users-mtsch-skills-dev/memory/r
 **Files:**
 - Modify: `running-spikes/` becomes a git repo with one commit on `main`.
 
-- [ ] **Step 1: Initialize git in the skill directory**
+- [x] **Step 1: Initialize git in the skill directory**
 
 ```bash
 cd running-spikes
 git init -q -b main
 ```
 
-- [ ] **Step 2: Configure committer as `claude-code`**
+- [x] **Step 2: Configure committer as `claude-code`**
 
 Per the user's global CLAUDE.md: "Commits as claude-code: set `user.name=claude-code` and `user.email=claude-code@llamabox.internal` so the PR author matches the token holder." This first commit is Claude-authored content, so use that identity locally for this repo only.
 
@@ -507,7 +507,7 @@ git config user.name "claude-code"
 git config user.email "claude-code@llamabox.internal"
 ```
 
-- [ ] **Step 3: Stage all skill content and commit**
+- [x] **Step 3: Stage all skill content and commit**
 
 ```bash
 git add -A
@@ -516,7 +516,7 @@ git -c commit.gpgsign=false commit -m "Initial commit: running-spikes skill"
 
 (Git-for-Windows CRLF warnings are cosmetic; ignore.)
 
-- [ ] **Step 4: Add the Gitea remote and push**
+- [x] **Step 4: Add the Gitea remote and push**
 
 ```bash
 git remote add origin gitea@llamabox.internal:schoen/skills-running-spikes.git
@@ -538,7 +538,7 @@ ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -T gitea@llamabox.inter
 **Files:**
 - Delete: `running-spikes/` (entire directory)
 
-- [ ] **Step 1: Change cwd OUT of the directory before removing it**
+- [x] **Step 1: Change cwd OUT of the directory before removing it**
 
 The Windows gotcha from the workflow note: `rm -rf` from inside the dir or with stale handles can fail with "Device or resource busy." Step out first.
 
@@ -547,7 +547,7 @@ cd ..
 pwd  # Expect: C:/Users/mtsch/skills-dev (or equivalent)
 ```
 
-- [ ] **Step 2: Remove the directory**
+- [x] **Step 2: Remove the directory**
 
 ```bash
 rm -rf running-spikes
@@ -558,7 +558,7 @@ If `rm -rf` empties the dir but fails to remove the husk:
 rmdir running-spikes
 ```
 
-- [ ] **Step 3: Verify removal**
+- [x] **Step 3: Verify removal**
 
 ```bash
 test ! -e running-spikes && echo "OK: removed" || echo "FAIL: still exists"
@@ -574,7 +574,7 @@ Expected: `OK: removed`.
 - Modify: `.gitmodules` (new submodule entry appended)
 - Create: `running-spikes/` (cloned from Gitea by `git submodule add`)
 
-- [ ] **Step 1: Add the submodule with a relative URL**
+- [x] **Step 1: Add the submodule with a relative URL**
 
 The relative URL convention is per `feedback_github_skills_naming.md` — `.gitmodules` should have `url = ../skills-running-spikes.git` so a fresh clone resolves the submodule against whichever host the index was cloned from.
 
@@ -587,7 +587,7 @@ Expected: a clone log followed by the submodule appearing in `git status`. Inter
 - Clones the Gitea repo into `running-spikes/`.
 - Stages `.gitmodules` and `running-spikes` (the gitlink) for commit.
 
-- [ ] **Step 2: Verify the relative URL was used**
+- [x] **Step 2: Verify the relative URL was used**
 
 ```bash
 grep -A2 'submodule "running-spikes"' .gitmodules
@@ -606,7 +606,7 @@ git config -f .gitmodules submodule.running-spikes.url ../skills-running-spikes.
 git config -f running-spikes/.git/config remote.origin.url gitea@llamabox.internal:schoen/skills-running-spikes.git
 ```
 
-- [ ] **Step 3: Verify the working-tree origin is the SSH Gitea URL**
+- [x] **Step 3: Verify the working-tree origin is the SSH Gitea URL**
 
 The submodule's *working tree* should still point at the SSH Gitea URL for daily git ops. (Per the user's global memory: don't run `git submodule sync` after fixing — it can overwrite the working-tree URL inconsistently.)
 
@@ -631,7 +631,7 @@ git -C running-spikes remote set-url origin gitea@llamabox.internal:schoen/skill
 
 **Files:** none locally — submodule git config + remote push.
 
-- [ ] **Step 1: Add the `github` remote on the submodule**
+- [x] **Step 1: Add the `github` remote on the submodule**
 
 Per `feedback_github_skills_naming.md`, the per-submodule remote convention is `origin` → Gitea, `github` → GitHub.
 
@@ -639,7 +639,7 @@ Per `feedback_github_skills_naming.md`, the per-submodule remote convention is `
 git -C running-spikes remote add github https://github.com/mtschoen/skills-running-spikes.git
 ```
 
-- [ ] **Step 2: Push to GitHub**
+- [x] **Step 2: Push to GitHub**
 
 ```bash
 git -C running-spikes push -u github main
@@ -647,7 +647,7 @@ git -C running-spikes push -u github main
 
 Expected: `* [new branch]      main -> main`. If gh is set up to use https with credential helper, no extra steps; if it's set up with ssh, swap the URL to `git@github.com:mtschoen/skills-running-spikes.git` (use whichever pattern the existing skill submodules use — verify with `git -C ../pushback remote -v`).
 
-- [ ] **Step 3: Verify both remotes**
+- [x] **Step 3: Verify both remotes**
 
 ```bash
 git -C running-spikes remote -v
@@ -661,7 +661,7 @@ Expected: `origin` → `gitea@llamabox.internal:schoen/skills-running-spikes.git
 
 **Files:** none modified — read-only verification.
 
-- [ ] **Step 1: Run install-skills dry-run for the new skill**
+- [x] **Step 1: Run install-skills dry-run for the new skill**
 
 ```bash
 ./install-skills.sh -n running-spikes
@@ -693,7 +693,7 @@ Expected: SKILL.md is present in the install dir with the correct frontmatter.
 - Modify: `.gitmodules` (already staged by `git submodule add`)
 - Create: `running-spikes` (gitlink, already staged)
 
-- [ ] **Step 1: Confirm what's staged**
+- [x] **Step 1: Confirm what's staged**
 
 ```bash
 git status
@@ -701,7 +701,7 @@ git status
 
 Expected: `.gitmodules` and `running-spikes` both staged for commit (modified + new respectively).
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git -c commit.gpgsign=false commit -m "Add running-spikes as submodule"
@@ -709,7 +709,7 @@ git -c commit.gpgsign=false commit -m "Add running-spikes as submodule"
 
 (Use the user's normal committer for skills-dev itself — don't apply the `claude-code` identity from Task 8; that was scoped to the new repo's first commit.)
 
-- [ ] **Step 3: Verify the commit**
+- [x] **Step 3: Verify the commit**
 
 ```bash
 git log --oneline -1
@@ -729,7 +729,7 @@ The user explicitly flagged this gap during brainstorming: skills-dev currently 
 **Files:**
 - Create: `CLAUDE.md` (at the skills-dev repo root)
 
-- [ ] **Step 1: Write the CLAUDE.md**
+- [x] **Step 1: Write the CLAUDE.md**
 
 ```markdown
 # skills-dev — Claude Code instructions
@@ -748,8 +748,13 @@ The workflow:
    - GitHub: `mtschoen/skills-<name>` (public). Use `gh repo create`.
 3. Init the local dir as git, commit (with `user.name=claude-code` for Claude-authored first commits, per the user's global CLAUDE.md), push to Gitea.
 4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
-5. Add as submodule with the relative URL convention: `git submodule add ../skills-<name>.git <name>`.
-6. Configure per-submodule remotes: `origin` → Gitea (SSH), `github` → GitHub. Push to GitHub.
+5. Add as submodule. **Important sequencing pitfall:** `git submodule add ../skills-<name>.git <name>` resolves the relative URL against the superproject's first-listed remote (alphabetically `github` before `origin`). At this point in the workflow GitHub is still empty (we only pushed to Gitea in step 3), so the relative-URL form fails with "cloned an empty repository / branch yet to be born." Use the **absolute Gitea URL** initially, then rewrite `.gitmodules` to the relative form afterwards:
+   ```bash
+   git submodule add gitea@llamabox.internal:schoen/skills-<name>.git <name>
+   git config -f .gitmodules submodule.<name>.url ../skills-<name>.git
+   ```
+   Do NOT run `git submodule sync` after the rewrite — it can propagate the relative URL to `.git/config` and break daily git ops. The submodule's working-tree origin should remain the SSH Gitea URL.
+6. Configure per-submodule remotes: `origin` → Gitea (SSH, already set by step 5), `github` → GitHub (SSH, `git@github.com:mtschoen/skills-<name>.git`). Push to GitHub: `git -C <name> push -u github main`.
 7. Confirm `install-skills.{sh,bat}` picks up the new skill via dry run: `./install-skills.sh -n <name>`.
 8. Commit the submodule pointer in skills-dev.
 9. Run `scripts/push-all.{sh,bat}` to push both hosts.
@@ -779,7 +784,7 @@ Errors are printed inline and don't halt the run.
 In-flight design specs live in `docs/superpowers/specs/` and implementation plans in `docs/superpowers/plans/`. Both are scaffolding — distilled into the plan header on spec→plan handoff, then deleted at branch-finish. Lasting design rationale folds into per-skill `SKILL.md` and `README.md` files.
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 test -f CLAUDE.md && echo "OK ($(wc -l < CLAUDE.md) lines)"
@@ -795,7 +800,7 @@ Expected: `OK (~50 lines)` and the first three lines starting with `# skills-dev
 **Files:**
 - Modify: `CLAUDE.md` staged for commit.
 
-- [ ] **Step 1: Stage and commit**
+- [x] **Step 1: Stage and commit**
 
 ```bash
 git add CLAUDE.md
@@ -806,7 +811,7 @@ had no in-tree documentation of the new-skill-needs-new-repo workflow.
 Cross-references the existing memory note for concrete steps."
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 git log --oneline -2
