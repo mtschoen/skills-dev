@@ -72,10 +72,16 @@ The skill catches these defaults and considers spiking instead:
 - "Let me read more docs about how X behaves."
 - "Let me grep across other projects for how this is usually done."
 - "Let me think through whether Y will work."
-- "Let me web-search to confirm Z."
 
 …AND the question is about observable behavior of an external system AND a
 small experiment could produce a definitive answer.
+
+**Deliberately omitted for v1:** "Let me web-search to confirm Z." The
+user's UserPromptSubmit hook actively pushes Claude *toward* WebSearch
+before any design / planning / debugging move. Listing web-search as a
+spike trigger would put the skill in direct conflict with the hook on
+every prompt — the skill would over-fire. Re-adding this signal is parked
+until the hook's balance is reworked. See "Open questions" below.
 
 ### Four suppression gates
 
@@ -342,3 +348,11 @@ Before reporting back to the user:
   agent that authored them. Watch for the user surfacing "you're still
   reading instead of running" in the first few sessions after install — that
   signals the trigger language needs sharpening.
+- **Web-search trigger, parked.** "Let me web-search to confirm Z" is a
+  natural spike signal but currently conflicts with the user's
+  UserPromptSubmit hook, which pushes Claude *toward* WebSearch on every
+  prompt that involves design / planning / debugging. Putting the spike
+  skill in direct opposition would over-fire it. Revisit when the hook is
+  retuned (e.g., made conditional, demoted to a softer nudge, or scoped to
+  specific moments). Until then, the spike skill leans on the other three
+  signals — they're sufficient for the action-bias the user wants.
