@@ -827,7 +827,7 @@ Expected: two recent commits — the running-spikes submodule add (Task 13) and 
 
 **Files:** none modified — pushes only.
 
-- [ ] **Step 1: Push everything**
+- [x] **Step 1: Push everything**
 
 ```bash
 ./scripts/push-all.sh
@@ -840,7 +840,7 @@ Expected output:
 
 Inspect for any `FAILED:` lines.
 
-- [ ] **Step 2: Verify GitHub side received the index update**
+- [x] **Step 2: Verify GitHub side received the index update**
 
 ```bash
 gh repo view mtschoen/skills-dev --json url
@@ -856,7 +856,7 @@ The two SHAs (`ls-remote HEAD` and local `HEAD`) should match.
 
 **Files:** none modified.
 
-- [ ] **Step 1: Confirm the skill is installable and present in `~/.claude/skills/`**
+- [x] **Step 1: Confirm the skill is installable and present in `~/.claude/skills/`**
 
 ```bash
 ./install-skills.sh -y running-spikes
@@ -874,7 +874,7 @@ This step is **not automated** — it requires a fresh Claude Code session. Afte
 
 Note this manually as a follow-up verification; do not block the plan completion on it.
 
-- [ ] **Step 3: Update the auto-memory MEMORY.md to reflect the new skill**
+- [x] **Step 3: Update the auto-memory MEMORY.md to reflect the new skill**
 
 The auto-memory at `C:/Users/mtsch/.claude/projects/C--Users-mtsch-skills-dev/memory/MEMORY.md` should get a one-line entry. Append a project-type note (since this is project-scoped to skills-dev):
 
@@ -910,7 +910,7 @@ Installed at `~/.claude/skills/running-spikes/`. Source repo: `schoen/skills-run
 EOF
 ```
 
-- [ ] **Step 4: Done — report to user**
+- [x] **Step 4: Done — report to user**
 
 Brief report:
 - New repo `schoen/skills-running-spikes` (Gitea) and `mtschoen/skills-running-spikes` (GitHub) created.
