@@ -43,3 +43,6 @@
 [submodule "cost-estimator"]
 	path = cost-estimator
 	url = ../skills-cost-estimator.git
+[submodule "running-spikes"]
+	path = running-spikes
+	url = ../skills-running-spikes.git
