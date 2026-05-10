@@ -46,3 +46,6 @@
 [submodule "running-spikes"]
 	path = running-spikes
 	url = ../skills-running-spikes.git
+[submodule "progress-beacon"]
+	path = progress-beacon
+	url = ../skills-progress-beacon.git
