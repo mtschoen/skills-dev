@@ -40,10 +40,8 @@ Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `eval
 
 ## Working across all submodules
 
-- `scripts/push-all.{sh,bat}` — push every active submodule plus the umbrella to both `origin` (Gitea) and `github` (GitHub).
+- `scripts/push-all.{sh,bat}` — push every active submodule plus the umbrella to both `origin` (Gitea) and `github` (GitHub). Each push is pre-flighted: fetch the remote and classify local main vs remote/main as up-to-date / FF / behind / diverged. Non-FF states are reported with a clear reason ("behind by N", "DIVERGED: ahead N, behind M") and the push is skipped instead of failing with a generic line. Errors don't halt the run, but the script exits non-zero with a summary of all issues at the end.
 - `scripts/pull-all.{sh,bat}` — pull latest from Gitea on every submodule plus the umbrella.
-
-Errors are printed inline and don't halt the run.
 
 ## Specs and plans
 
