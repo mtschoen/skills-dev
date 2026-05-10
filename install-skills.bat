@@ -41,7 +41,7 @@ goto parse_args
 :parse_done
 
 rem Excludes applied only to the root layout.
-set "EXCLUDE_DIRS=.git .github docs evals hooks node_modules reports skill-draft"
+set "EXCLUDE_DIRS=.git .github docs evals node_modules reports skill-draft"
 set "EXCLUDE_FILES=.git .gitignore .gitmodules README.md AUDIT.md LICENSE HANDOFF.md"
 
 if not exist "%DEST_ROOT%" mkdir "%DEST_ROOT%"

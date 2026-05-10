@@ -38,7 +38,7 @@ done
 ROOT_EXCLUDES=(
     .git .gitignore .gitmodules .github
     README.md AUDIT.md LICENSE HANDOFF.md
-    docs evals hooks node_modules reports
+    docs evals node_modules reports
     skill-draft
 )
 
