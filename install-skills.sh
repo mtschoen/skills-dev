@@ -38,8 +38,9 @@ done
 ROOT_EXCLUDES=(
     .git .gitignore .gitmodules .github
     README.md AUDIT.md LICENSE HANDOFF.md
-    docs evals node_modules reports
+    docs evals node_modules reports tests
     skill-draft
+    capture-screenshot.py regen-screenshots.sh regen-screenshots.bat
 )
 
 has_selection() { [ "${#SELECTED[@]}" -gt 0 ]; }
