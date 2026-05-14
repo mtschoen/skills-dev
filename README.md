@@ -42,11 +42,13 @@ Each skill directory either has `SKILL.md` at its root (new layout) or a `skill-
 
 ## Working across all submodules
 
-`scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo and push/pull against both `origin` (Gitea) and `github` (GitHub) where those remotes exist. Errors print inline and don't halt the run.
+`scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo and push/pull against `origin` by default. Pass `--remote <name>` to also push/pull another remote where it exists. Errors print inline and don't halt the run.
 
 ```bash
 ./scripts/pull-all.sh
 ./scripts/push-all.sh
+./scripts/pull-all.sh --remote github
+./scripts/push-all.sh --remote github
 ```
 
 ## Layout

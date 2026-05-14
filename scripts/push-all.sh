@@ -1,16 +1,45 @@
 #!/usr/bin/env bash
-# Push every active submodule + skills-dev itself to both `origin` (Gitea)
-# and `github` (GitHub). Each push is pre-flighted: fetch the remote and
-# classify local main vs remote/main as up-to-date / FF / behind / diverged.
-# A non-FF state is reported with a clear reason instead of a generic
-# "FAILED" line. Errors don't halt the run, but the script exits non-zero
-# with a summary if any push had a problem.
+# Push every active submodule + skills-dev itself to `origin` and optionally
+# one additional remote named with `--remote <name>`. Each push is pre-flighted:
+# fetch the remote and classify local main vs remote/main as up-to-date / FF /
+# behind / diverged. A non-FF state is reported with a clear reason instead of
+# a generic "FAILED" line. Errors don't halt the run, but the script exits
+# non-zero with a summary if any push had a problem.
 #
 # Run from anywhere; the script cd's to the repo root.
 
 cd "$(dirname "$0")/.."
 
+remotes=(origin)
 failures=()
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/push-all.sh [--remote <name>]
+
+Push every active submodule plus skills-dev itself to origin. If --remote is
+provided, also push to that remote where it exists.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --remote)
+      [ $# -ge 2 ] || { echo "--remote requires a value" >&2; exit 2; }
+      remotes+=("$2")
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 push_one() {
   local dir=$1 remote=$2
@@ -53,16 +82,18 @@ push_one() {
 while IFS= read -r path; do
   echo "=== $path ==="
   if [ -e "$path/.git" ]; then
-    push_one "$path" origin
-    push_one "$path" github
+    for remote in "${remotes[@]}"; do
+      push_one "$path" "$remote"
+    done
   else
     echo "  (not initialized, skipping)"
   fi
 done < <(git config --file .gitmodules --get-regexp 'submodule\..*\.path' | awk '{print $2}')
 
 echo "=== skills-dev (index) ==="
-push_one "." origin
-push_one "." github
+for remote in "${remotes[@]}"; do
+  push_one "." "$remote"
+done
 
 echo
 echo "=== Summary ==="

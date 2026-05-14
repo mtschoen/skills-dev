@@ -1,13 +1,36 @@
 @echo off
-rem Push every active submodule + skills-dev itself to both `origin` (Gitea)
-rem and `github` (GitHub). Each push is pre-flighted: fetch the remote and
-rem classify local main vs remote/main as up-to-date / FF / behind / diverged.
-rem A non-FF state is reported with a clear reason instead of a generic
-rem "FAILED" line. Errors don't halt the run, but the script exits non-zero
-rem with a summary if any push had a problem.
+rem Push every active submodule + skills-dev itself to origin and optionally
+rem one additional remote named with --remote <name>. Each push is pre-flighted:
+rem fetch the remote and classify local main vs remote/main as up-to-date / FF /
+rem behind / diverged. A non-FF state is reported with a clear reason instead of
+rem a generic "FAILED" line. Errors don't halt the run, but the script exits
+rem non-zero with a summary if any push had a problem.
 rem Run from anywhere; the script cd's to the repo root.
 setlocal enabledelayedexpansion
 cd /d "%~dp0\.."
+
+set "REMOTE_COUNT=1"
+set "REMOTE_1=origin"
+
+:parse_args
+if "%~1"=="" goto parse_done
+if /i "%~1"=="--remote" (
+  if "%~2"=="" (
+    echo --remote requires a value 1>&2
+    exit /b 2
+  )
+  set /a REMOTE_COUNT+=1
+  set "REMOTE_!REMOTE_COUNT!=%~2"
+  shift
+  shift
+  goto parse_args
+)
+if /i "%~1"=="-h" goto usage
+if /i "%~1"=="--help" goto usage
+echo unknown argument: %~1 1>&2
+goto usage_error
+
+:parse_done
 
 set "FAILFILE=%TEMP%\push-all-failures-%RANDOM%.txt"
 if exist "%FAILFILE%" del "%FAILFILE%"
@@ -15,16 +38,14 @@ if exist "%FAILFILE%" del "%FAILFILE%"
 for /f "tokens=2" %%P in ('git config --file .gitmodules --get-regexp "submodule\..*\.path"') do (
   echo === %%P ===
   if exist "%%P\.git" (
-    call :push_one "%%P" origin
-    call :push_one "%%P" github
+    for /l %%R in (1,1,%REMOTE_COUNT%) do call :push_one "%%P" "!REMOTE_%%R!"
   ) else (
     echo   ^(not initialized, skipping^)
   )
 )
 
 echo === skills-dev ^(index^) ===
-call :push_one "." origin
-call :push_one "." github
+for /l %%R in (1,1,%REMOTE_COUNT%) do call :push_one "." "!REMOTE_%%R!"
 
 echo.
 echo === Summary ===
@@ -78,3 +99,14 @@ if not "!BEHIND!"=="0" (
 git -C "%DIR%" push %REMOTE% main
 if errorlevel 1 echo   %DIR% -^> %REMOTE% ^(push failed^)>> "%FAILFILE%"
 goto :eof
+
+:usage
+echo Usage: scripts\push-all.bat [--remote ^<name^>]
+echo.
+echo Push every active submodule plus skills-dev itself to origin. If --remote is
+echo provided, also push to that remote where it exists.
+exit /b 0
+
+:usage_error
+call :usage
+exit /b 2
