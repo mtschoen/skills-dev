@@ -1,36 +1,69 @@
 #!/usr/bin/env bash
-# Install skills from this repo into ~/.claude/skills/.
+# Install skills from this repo into one or more agent config dirs.
 #
 # Each top-level dir here is a skill submodule. The installable content is
 # either `<skill>/skill-draft/` (legacy layout) or `<skill>/` itself (new
 # layout, detected by a SKILL.md at the root). Dev-only files are excluded
 # for the root layout.
 #
-# Usage: ./install-skills.sh [-y] [-n] [skill ...]
+# Usage: ./install-skills.sh [-y] [-n] [--claude] [--pi] [--hermes] [--gemini] [--codex] [--all] [skill ...]
 #   -y / --yes       overwrite without prompting
 #   -n / --dry-run   show what would change, don't copy
+#   --claude         install to ~/.claude/skills (default when no agent flag is given)
+#   --pi             install to ~/.pi/agent/skills
+#   --hermes         install to ~/.hermes/skills
+#   --gemini         install to ~/.gemini/skills
+#   --codex          install to ~/.codex/skills
+#   --all            install to all known agent skill dirs
 #   positional args  limit to specific skill names (default: all)
 
 set -euo pipefail
 
 SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST_ROOT="${HOME}/.claude/skills"
 
 ASSUME_YES=0
 DRY_RUN=0
 SELECTED=()
+DESTINATIONS=()
+
+add_destination() {
+    local name="$1" path="$2"
+    local existing
+    for existing in "${DESTINATIONS[@]}"; do
+        [ "$existing" = "$name|$path" ] && return 0
+    done
+    DESTINATIONS+=("$name|$path")
+}
+
+add_all_destinations() {
+    add_destination claude "${HOME}/.claude/skills"
+    add_destination pi "${HOME}/.pi/agent/skills"
+    add_destination hermes "${HOME}/.hermes/skills"
+    add_destination gemini "${HOME}/.gemini/skills"
+    add_destination codex "${HOME}/.codex/skills"
+}
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -y|--yes) ASSUME_YES=1; shift ;;
         -n|--dry-run) DRY_RUN=1; shift ;;
+        --claude) add_destination claude "${HOME}/.claude/skills"; shift ;;
+        --pi) add_destination pi "${HOME}/.pi/agent/skills"; shift ;;
+        --hermes) add_destination hermes "${HOME}/.hermes/skills"; shift ;;
+        --gemini) add_destination gemini "${HOME}/.gemini/skills"; shift ;;
+        --codex) add_destination codex "${HOME}/.codex/skills"; shift ;;
+        --all) add_all_destinations; shift ;;
         -h|--help)
-            sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
     esac
 done
+
+if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
+    add_destination claude "${HOME}/.claude/skills"
+fi
 
 # Files/dirs excluded when installing from a skill's root (new layout).
 # The skill-draft/ layout already isolates installable content, so these
@@ -96,8 +129,8 @@ confirm() {
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 
-install_skill() {
-    local name="$1"
+install_skill_to_destination() {
+    local name="$1" agent="$2" dest_root="$3"
     local src_dir="$SRC_ROOT/$name"
     local content_dir layout
     if [ -d "$src_dir/skill-draft" ]; then
@@ -111,11 +144,12 @@ install_skill() {
         return
     fi
 
-    local dest="$DEST_ROOT/$name"
+    local dest="$dest_root/$name"
 
     if [ ! -e "$dest" ]; then
-        echo "install $name -> $dest"
+        echo "install $name -> $dest ($agent)"
         if [ "$DRY_RUN" != 1 ]; then
+            mkdir -p "$dest_root"
             sync_dir "$content_dir" "$dest" "$layout"
         fi
         return
@@ -126,12 +160,12 @@ install_skill() {
     local diff_out
     diff_out=$(diff $(diff_args_for "$layout") "$content_dir" "$dest" 2>&1 || true)
     if [ -z "$diff_out" ]; then
-        echo "unchanged $name"
+        echo "unchanged $name ($agent)"
         return
     fi
 
     echo
-    echo "update $name (changes below):"
+    echo "update $name -> $dest ($agent, changes below):"
     echo "$diff_out" | sed 's/^/  /'
 
     if [ "$DRY_RUN" = 1 ]; then
@@ -140,6 +174,7 @@ install_skill() {
     fi
 
     if confirm "overwrite $dest?"; then
+        mkdir -p "$dest_root"
         sync_dir "$content_dir" "$dest" "$layout"
         echo "  updated."
     else
@@ -147,7 +182,14 @@ install_skill() {
     fi
 }
 
-mkdir -p "$DEST_ROOT"
+install_skill() {
+    local name="$1" destination agent dest_root
+    for destination in "${DESTINATIONS[@]}"; do
+        agent="${destination%%|*}"
+        dest_root="${destination#*|}"
+        install_skill_to_destination "$name" "$agent" "$dest_root"
+    done
+}
 
 for src in "$SRC_ROOT"/*/; do
     name="$(basename "$src")"

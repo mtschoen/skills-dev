@@ -16,14 +16,27 @@ git submodule update --init --recursive
 
 ## Installing skills
 
-`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into `~/.claude/skills/` so Claude Code picks them up.
+`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. By default they install only to `~/.claude/skills/` so Claude Code picks them up; pass agent flags to install elsewhere.
 
 ```bash
-./install-skills.sh           # interactive: prompts before overwriting changed installs
+./install-skills.sh           # interactive: install to Claude, prompts before overwriting changed installs
 ./install-skills.sh -y        # overwrite without prompting
 ./install-skills.sh -n        # dry run; show what would change
-./install-skills.sh smoke-test pushback   # limit to specific skills
+./install-skills.sh --pi      # install to ~/.pi/agent/skills instead
+./install-skills.sh --all     # install to Claude, pi, Hermes, Gemini, and Codex
+./install-skills.sh --pi --codex smoke-test pushback   # limit destinations and skills
 ```
+
+Supported destination flags:
+
+| Flag | Destination |
+|---|---|
+| `--claude` | `~/.claude/skills` |
+| `--pi` | `~/.pi/agent/skills` |
+| `--hermes` | `~/.hermes/skills` |
+| `--gemini` | `~/.gemini/skills` |
+| `--codex` | `~/.codex/skills` |
+| `--all` | all of the above |
 
 Each skill directory either has `SKILL.md` at its root (new layout) or a `skill-draft/` subdirectory (legacy layout). The installer detects which and copies the right content; dev-only files (`evals/`, `docs/`, `README.md`, etc.) are excluded for the root layout.
 
