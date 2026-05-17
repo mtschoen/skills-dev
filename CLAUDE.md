@@ -20,7 +20,7 @@ The workflow:
    git config -f .gitmodules submodule.<name>.url ../skills-<name>.git
    ```
    Do **not** run `git submodule sync` after the rewrite — it can propagate the relative URL into the submodule's working-tree `origin` and break daily git ops. The working-tree origin should remain the SSH Gitea URL set by `submodule add`.
-6. Configure per-submodule remotes: `origin` → Gitea (SSH, already set by step 5), `github` → GitHub (SSH, `git@github.com:mtschoen/skills-<name>.git`). Push to GitHub: `git -C <name> push -u github main`.
+6. Configure per-submodule remotes: `origin` → Gitea (SSH, already set by step 5), `github` → GitHub (SSH, `git@github.com:mtschoen/skills-<name>.git`). Push to GitHub: `git -C <name> push github main` — **no `-u`**, since main's upstream should stay at `origin/main` (set by step 5). Using `-u github` here silently retargets the upstream and breaks the convention.
 7. Confirm `install-skills.{sh,bat}` picks up the new skill via dry run: `./install-skills.sh -n <name>`. (For fresh installs the dry-run output is just one line: `install <name> -> ~/.claude/skills/<name>`. That's normal — file-listing diffs only appear for already-installed skills.)
 8. Commit the submodule pointer in skills-dev.
 9. Run `scripts/push-all.{sh,bat}` to push both hosts.
