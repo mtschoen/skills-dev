@@ -5,6 +5,13 @@ test-sandbox/
 # Captured subagent transcripts that may contain absolute paths or noise
 **/tests/results/scratch/
 
+# Test coverage artifacts
+.coverage
+**/.coverage
+coverage.xml
+**/coverage.xml
+.pytest_cache
+
 .maintenance.json
 .claude/
 
