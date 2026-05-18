@@ -1,16 +1,18 @@
 @echo off
-rem Push every active submodule + skills-dev itself to origin and optionally
-rem one additional remote named with --remote <name>. Each push is pre-flighted:
-rem fetch the remote and classify local main vs remote/main as up-to-date / FF /
-rem behind / diverged. A non-FF state is reported with a clear reason instead of
-rem a generic "FAILED" line. Errors don't halt the run, but the script exits
-rem non-zero with a summary if any push had a problem.
+rem Push every active submodule + skills-dev itself to origin (Gitea) and
+rem github (GitHub). Pass --remote <name> to add further remotes. Each push
+rem is pre-flighted: fetch the remote and classify local main vs remote/main
+rem as up-to-date / FF / behind / diverged. A non-FF state is reported with
+rem a clear reason instead of a generic "FAILED" line. Errors don't halt the
+rem run, but the script exits non-zero with a summary if any push had a
+rem problem. Remotes that don't exist on a given submodule are silently skipped.
 rem Run from anywhere; the script cd's to the repo root.
 setlocal enabledelayedexpansion
 cd /d "%~dp0\.."
 
-set "REMOTE_COUNT=1"
+set "REMOTE_COUNT=2"
 set "REMOTE_1=origin"
+set "REMOTE_2=github"
 
 :parse_args
 if "%~1"=="" goto parse_done
@@ -103,8 +105,9 @@ goto :eof
 :usage
 echo Usage: scripts\push-all.bat [--remote ^<name^>]
 echo.
-echo Push every active submodule plus skills-dev itself to origin. If --remote is
-echo provided, also push to that remote where it exists.
+echo Push every active submodule plus skills-dev itself to origin (Gitea) and
+echo github (GitHub). If --remote is provided, also push to that remote where
+echo it exists.
 exit /b 0
 
 :usage_error

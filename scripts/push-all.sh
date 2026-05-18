@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# Push every active submodule + skills-dev itself to `origin` and optionally
-# one additional remote named with `--remote <name>`. Each push is pre-flighted:
-# fetch the remote and classify local main vs remote/main as up-to-date / FF /
-# behind / diverged. A non-FF state is reported with a clear reason instead of
-# a generic "FAILED" line. Errors don't halt the run, but the script exits
-# non-zero with a summary if any push had a problem.
+# Push every active submodule + skills-dev itself to `origin` (Gitea) and
+# `github` (GitHub). Pass `--remote <name>` to add further remotes. Each push
+# is pre-flighted: fetch the remote and classify local main vs remote/main as
+# up-to-date / FF / behind / diverged. A non-FF state is reported with a
+# clear reason instead of a generic "FAILED" line. Errors don't halt the
+# run, but the script exits non-zero with a summary if any push had a
+# problem. Remotes that don't exist on a given submodule are silently skipped.
 #
 # Run from anywhere; the script cd's to the repo root.
 
 cd "$(dirname "$0")/.."
 
-remotes=(origin)
+remotes=(origin github)
 failures=()
 
 usage() {
   cat <<'EOF'
 Usage: scripts/push-all.sh [--remote <name>]
 
-Push every active submodule plus skills-dev itself to origin. If --remote is
-provided, also push to that remote where it exists.
+Push every active submodule plus skills-dev itself to origin (Gitea) and
+github (GitHub). If --remote is provided, also push to that remote where
+it exists.
 EOF
 }
 
