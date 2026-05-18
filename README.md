@@ -53,7 +53,7 @@ Each skill directory either has `SKILL.md` at its root (new layout) or a `skill-
 
 ## Layout
 
-```
+```text
 skills-dev/
 ├── <skill-name>/        # submodule -> skills-<skill-name>.git
 │   ├── SKILL.md         # the skill itself

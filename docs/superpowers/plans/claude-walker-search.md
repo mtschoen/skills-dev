@@ -69,7 +69,7 @@ through more than one item without coming back to the user.
 
 Before any Rust code. Create the corpus per spec §"Conformance fixtures":
 
-```
+```text
 shared/corpus/search/
   01-basic/{sid1.jsonl, sid2.jsonl, sid3.jsonl, expected.json}
   02-multi-match-per-session/{sid1.jsonl, expected.json}

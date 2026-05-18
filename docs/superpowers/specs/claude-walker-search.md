@@ -46,7 +46,7 @@ subcommand with two mental models.
 
 ## CLI shape
 
-```
+```text
 walker search <pattern> [flags]
 ```
 
@@ -83,7 +83,7 @@ change against the base CLI contract.
 A hit is a **single message** whose textual content matches the
 pattern. Pseudocode:
 
-```
+```text
 for each message m in walked transcripts:
     if filter_excludes(m): continue
     text = extract_text(m)        # see "Content extraction"
@@ -139,7 +139,7 @@ Applied in this order (cheapest first):
 
 ### `--format pretty` (default; for humans)
 
-```
+```text
 [2026-03-18T14:32:11Z] cwd=skills-dev role=assistant session=01HXY...
   ./root/skills-dev/01HXY-abc-def.jsonl:147
   ...one turn before the hit (truncated to 120 chars)...
@@ -296,7 +296,7 @@ don't re-litigate.
 
 ---
 
-# MCP shim
+## MCP shim
 
 ## Why MCP, not (only) a skill
 

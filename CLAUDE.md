@@ -15,10 +15,12 @@ The workflow:
 3. Init the local dir as git, commit (with `user.name=claude-code` for Claude-authored first commits, per the user's global CLAUDE.md), push to Gitea.
 4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
 5. Add as submodule. **Sequencing pitfall:** `git submodule add ../skills-<name>.git <name>` resolves the relative URL against whichever superproject remote git picks first (alphabetically `github` before `origin`). At this step GitHub is still empty (only Gitea has the initial commit from step 3), so the relative-URL form fails with `cloned an empty repository / branch yet to be born / unable to checkout submodule`. Use the **absolute Gitea URL**, then rewrite `.gitmodules` to the relative form:
+
    ```bash
    git submodule add gitea@llamabox.internal:schoen/skills-<name>.git <name>
    git config -f .gitmodules submodule.<name>.url ../skills-<name>.git
    ```
+
    Do **not** run `git submodule sync` after the rewrite — it can propagate the relative URL into the submodule's working-tree `origin` and break daily git ops. The working-tree origin should remain the SSH Gitea URL set by `submodule add`.
 6. Configure per-submodule remotes: `origin` → Gitea (SSH, already set by step 5), `github` → GitHub (SSH, `git@github.com:mtschoen/skills-<name>.git`). Push to GitHub: `git -C <name> push github main` — **no `-u`**, since main's upstream should stay at `origin/main` (set by step 5). Using `-u github` here silently retargets the upstream and breaks the convention.
 7. Confirm `install-skills.{sh,bat}` picks up the new skill via dry run: `./install-skills.sh -n <name>`. (For fresh installs the dry-run output is just one line: `install <name> -> ~/.claude/skills/<name>`. That's normal — file-listing diffs only appear for already-installed skills.)
