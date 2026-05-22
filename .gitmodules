@@ -31,8 +31,8 @@
 [submodule "capture-idea"]
 	path = capture-idea
 	url = ../skills-capture-idea.git
-[submodule "escalate-over-improvise"]
-	path = escalate-over-improvise
+[submodule "escalate-over-shortcut"]
+	path = escalate-over-shortcut
 	url = ../skills-escalate-over-improvise.git
 [submodule "fast-tests"]
 	path = fast-tests
