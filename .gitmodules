@@ -33,7 +33,7 @@
 	url = ../skills-capture-idea.git
 [submodule "escalate-over-shortcut"]
 	path = escalate-over-shortcut
-	url = ../skills-escalate-over-improvise.git
+	url = ../skills-escalate-over-shortcut.git
 [submodule "fast-tests"]
 	path = fast-tests
 	url = ../skills-fast-tests.git
