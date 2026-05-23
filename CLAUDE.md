@@ -12,7 +12,7 @@ The workflow:
 2. Create the remote repos:
    - Gitea: `schoen/skills-<name>` (private). Owned by `schoen`, so use `~/.gitea-token` (admin) — `~/.gitea-token-claude` can't create under another user's namespace.
    - GitHub: `mtschoen/skills-<name>` (public). Use `gh repo create`.
-3. Init the local dir as git, commit (with `user.name=claude-code` for Claude-authored first commits, per the user's global CLAUDE.md), push to Gitea.
+3. Init the local dir as git, commit, push to Gitea. (Use the default Matt Schoen git identity — the global CLAUDE.md's bot-identity pattern is only for PRs where Gitea's self-approval block matters, not for direct main-branch commits.)
 4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
 5. Add as submodule. **Sequencing pitfall:** `git submodule add ../skills-<name>.git <name>` resolves the relative URL against whichever superproject remote git picks first (alphabetically `github` before `origin`). At this step GitHub is still empty (only Gitea has the initial commit from step 3), so the relative-URL form fails with `cloned an empty repository / branch yet to be born / unable to checkout submodule`. Use the **absolute Gitea URL**, then rewrite `.gitmodules` to the relative form:
 
