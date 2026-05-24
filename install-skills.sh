@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Install skills from this repo into one or more agent config dirs.
 #
-# Each top-level dir here is a skill submodule. The installable content is
-# either `<skill>/skill-draft/` (legacy layout) or `<skill>/` itself (new
-# layout, detected by a SKILL.md at the root). Dev-only files are excluded
-# for the root layout.
+# Each top-level dir here is a skill submodule with a SKILL.md at its root.
+# The installable content is `<skill>/` itself; dev-only files (evals/,
+# tests/, README, LICENSE, etc.) are excluded — see ROOT_EXCLUDES.
 #
 # Usage: ./install-skills.sh [-y] [-n] [--claude] [--pi] [--hermes] [--gemini] [--codex] [--all] [skill ...]
 #   -y / --yes       overwrite without prompting
@@ -65,14 +64,12 @@ if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
     add_destination claude "${HOME}/.claude/skills"
 fi
 
-# Files/dirs excluded when installing from a skill's root (new layout).
-# The skill-draft/ layout already isolates installable content, so these
-# aren't applied there.
+# Files/dirs excluded when installing a skill — dev-only content that
+# should not ship into the agent skills dir.
 ROOT_EXCLUDES=(
     .git .gitignore .gitmodules .github
     README.md AUDIT.md LICENSE HANDOFF.md
     docs evals node_modules reports tests
-    skill-draft
     capture-screenshot.py regen-screenshots.sh regen-screenshots.bat
 )
 
@@ -133,14 +130,11 @@ install_skill_to_destination() {
     local name="$1" agent="$2" dest_root="$3"
     local src_dir="$SRC_ROOT/$name"
     local content_dir layout
-    if [ -d "$src_dir/skill-draft" ]; then
-        content_dir="$src_dir/skill-draft"
-        layout="draft"
-    elif [ -f "$src_dir/SKILL.md" ]; then
+    if [ -f "$src_dir/SKILL.md" ]; then
         content_dir="$src_dir"
         layout="root"
     else
-        echo "skip $name (no SKILL.md and no skill-draft/)"
+        echo "skip $name (no SKILL.md)"
         return
     fi
 

@@ -12,138 +12,6 @@
 
 ---
 
-## Phase 1: Migrate the 8 skill-draft skills to root layout
-
-The 8 skill-draft skills and their `skill-draft/` contents (everything moves up to the repo root):
-
-| skill | skill-draft/ contents |
-|---|---|
-| find-task | SKILL.md |
-| maintaining-full-coverage | SKILL.md |
-| reconcile-tasks | SKILL.md |
-| smoke-test | SKILL.md |
-| fleet-orchestration | SKILL.md, references/maintenance-format.md |
-| project-maintenance | SKILL.md, references/{finding-schema,checklist,interactive-loop}.md |
-| unity-batchmode-worktree | SKILL.md, batch-mode-commands.md |
-| remote-claude | SKILL.md, references/remote-claude.py, tests/** |
-
-Each skill is its own submodule repo with a full `.git`. Daily git ops read from `<sub>/.git/config`. Use the **Bash tool** (git-bash) for the `git mv skill-draft/* .` glob so the shell expands it.
-
-### Task 1.1: Preflight — ensure all 8 submodules are on `main` and current
-
-- [x] **Step 1: Confirm each skill-draft submodule is on `main`, not detached HEAD**
-
-A submodule checked out at the superproject's pinned SHA is often in detached HEAD; committing there creates a dangling commit. Put each on `main` first.
-
-Run (Bash tool):
-```bash
-cd /c/Users/mtsch/skills-dev
-for s in find-task maintaining-full-coverage reconcile-tasks smoke-test \
-         fleet-orchestration project-maintenance unity-batchmode-worktree remote-claude; do
-  echo "=== $s ==="
-  git -C "$s" fetch origin --quiet
-  git -C "$s" checkout main
-  git -C "$s" pull --ff-only origin main
-done
-```
-Expected: each prints `=== <skill> ===` then ends on `main`, up to date. If any `pull --ff-only` fails (diverged), stop and reconcile that repo before proceeding.
-
-- [x] **Step 2: Confirm clean working trees**
-
-Run (Bash tool):
-```bash
-for s in find-task maintaining-full-coverage reconcile-tasks smoke-test \
-         fleet-orchestration project-maintenance unity-batchmode-worktree remote-claude; do
-  echo "=== $s ==="; git -C "$s" status --short
-done
-```
-Expected: no output under each header (clean). Stash/commit any stray changes before migrating.
-
-### Task 1.2: Migrate each skill-draft skill to root layout
-
-Do this skill-by-skill so each repo gets one clean commit. The command sequence is identical for all 8; only `<S>` changes.
-
-- [x] **Step 1: Move contents up and remove skill-draft/ (per skill)**
-
-For each `<S>` in the 8 skills, run (Bash tool):
-```bash
-S=find-task   # repeat for each of the 8
-cd /c/Users/mtsch/skills-dev/"$S"
-git mv skill-draft/* .
-rmdir skill-draft 2>/dev/null || true
-git status --short
-```
-Expected `git status --short` shows renames like `R  skill-draft/SKILL.md -> SKILL.md` (and `references/...`, `tests/...` for the skills that have them). `skill-draft/` is gone.
-
-- [x] **Step 2: Verify SKILL.md's relative references still resolve**
-
-Run (Bash tool):
-```bash
-# No reference should still point at skill-draft/, and referenced files must exist.
-grep -n "skill-draft/" SKILL.md || echo "OK: no skill-draft/ references"
-grep -no "references/[A-Za-z0-9_./-]*" SKILL.md | while IFS=: read -r _ ref; do
-  [ -e "$ref" ] && echo "OK  $ref" || echo "MISSING  $ref"
-done
-```
-Expected: `OK: no skill-draft/ references` and every `references/...` path prints `OK` (none `MISSING`). For remote-claude, also confirm SKILL.md does not reference anything under `tests/` for runtime (tests/ becomes install-excluded — see Phase 2):
-```bash
-grep -n "tests/" SKILL.md || echo "OK: tests/ not referenced from SKILL.md"
-```
-Expected: `OK: tests/ not referenced from SKILL.md`.
-
-- [x] **Step 3: Commit in the submodule**
-
-Run (Bash tool):
-```bash
-git add -A
-git commit -m "refactor: migrate to root layout (SKILL.md at repo root)
-
-Flatten skill-draft/ into the repo root so the skill conforms to the
-Agent Skills layout the official validator expects (name == parent dir).
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
-Expected: one commit on `main` recording the renames.
-
-- [x] **Step 4: Push to both remotes**
-
-Run (Bash tool):
-```bash
-git push origin main
-git push github main
-```
-Expected: both succeed. If `origin` rejects (the pr-crew bot advanced main), `git pull --ff-only origin main` then re-push.
-
-- [x] **Step 5: Repeat Steps 1–4 for all 8 skills**
-
-Skills (do each): `find-task`, `maintaining-full-coverage`, `reconcile-tasks`, `smoke-test`, `fleet-orchestration`, `project-maintenance`, `unity-batchmode-worktree`, `remote-claude`.
-
-### Task 1.3: Bump the 8 submodule pointers in skills-dev
-
-- [x] **Step 1: Create the working branch and stage the advanced pointers**
-
-Run (Bash tool):
-```bash
-cd /c/Users/mtsch/skills-dev
-git checkout -b skills-ref-validation-upgrade
-git add find-task maintaining-full-coverage reconcile-tasks smoke-test \
-        fleet-orchestration project-maintenance unity-batchmode-worktree remote-claude
-git status --short
-```
-Expected: 8 lines like `M  smoke-test` (submodule new-commits). The pre-existing `running-spikes` modification is NOT staged — leave it alone.
-
-- [x] **Step 2: Commit the pointer bump**
-
-Run (Bash tool):
-```bash
-git commit -m "refactor: migrate 8 skills to root layout (bump submodule pointers)
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
-Expected: one commit advancing the 8 submodule pointers.
-
----
-
 ## Phase 2: Simplify the installer (drop the dual-path branch)
 
 All skills are root layout now, so the `skill-draft/` detection and exclude are dead code.
@@ -152,7 +20,7 @@ All skills are root layout now, so the `skill-draft/` detection and exclude are 
 
 **Files:** Modify `install-skills.sh`
 
-- [ ] **Step 1: Update the header comment**
+- [x] **Step 1: Update the header comment**
 
 Replace lines 4–7:
 ```bash
@@ -168,11 +36,11 @@ with:
 # tests/, README, LICENSE, etc.) are excluded — see ROOT_EXCLUDES.
 ```
 
-- [ ] **Step 2: Remove `skill-draft` from `ROOT_EXCLUDES`**
+- [x] **Step 2: Remove `skill-draft` from `ROOT_EXCLUDES`**
 
 In the `ROOT_EXCLUDES=(...)` array, delete the line containing just `skill-draft` (currently line 75).
 
-- [ ] **Step 3: Collapse the layout detection in `install_skill_to_destination`**
+- [x] **Step 3: Collapse the layout detection in `install_skill_to_destination`**
 
 Replace this block (currently lines 135–145):
 ```bash
@@ -205,7 +73,7 @@ with:
 
 **Files:** Modify `install-skills.bat`
 
-- [ ] **Step 1: Update the header comment**
+- [x] **Step 1: Update the header comment**
 
 Replace lines 6–9:
 ```bat
@@ -221,7 +89,7 @@ rem root. Installable content is <skill>\ itself; dev-only files are
 rem excluded for the root layout (see EXCLUDE_DIRS / EXCLUDE_FILES).
 ```
 
-- [ ] **Step 2: Remove `skill-draft` from `EXCLUDE_DIRS`**
+- [x] **Step 2: Remove `skill-draft` from `EXCLUDE_DIRS`**
 
 Change line 57 from:
 ```bat
@@ -232,7 +100,7 @@ to:
 set "EXCLUDE_DIRS=.git .github docs evals node_modules reports tests"
 ```
 
-- [ ] **Step 3: Collapse the layout detection in `:install_skill`**
+- [x] **Step 3: Collapse the layout detection in `:install_skill`**
 
 Replace this block (currently lines 109–118):
 ```bat
@@ -258,7 +126,7 @@ if exist "!src!\SKILL.md" (
 )
 ```
 
-- [ ] **Step 4: Verify the .bat still has CRLF line endings**
+- [x] **Step 4: Verify the .bat still has CRLF line endings**
 
 The Write/Edit tools emit LF on Windows; cmd.exe needs CRLF for `:label` lookup. Run (Bash tool):
 ```bash
@@ -270,7 +138,7 @@ Expected: lines end with CRLF. (Skip the `sed` if already CRLF.)
 
 ### Task 2.3: Verify the installer (dry-run)
 
-- [ ] **Step 1: Dry-run a root-layout skill that didn't change — expect no surprises**
+- [x] **Step 1: Dry-run a root-layout skill that didn't change — expect no surprises**
 
 Run (PowerShell):
 ```powershell
@@ -278,7 +146,7 @@ Run (PowerShell):
 ```
 Expected: `unchanged pushback (claude)` (or a diff if it was edited), never a `skip`.
 
-- [ ] **Step 2: Dry-run a migrated skill — expect it now installs from root layout**
+- [x] **Step 2: Dry-run a migrated skill — expect it now installs from root layout**
 
 Run (PowerShell):
 ```powershell
@@ -286,7 +154,7 @@ Run (PowerShell):
 ```
 Expected: an `update`/`unchanged` line for each, no `skip ... no SKILL.md`. For remote-claude the diff may show `tests/` being removed from the installed copy — that is correct (now excluded).
 
-- [ ] **Step 3: Commit the installer changes**
+- [x] **Step 3: Commit the installer changes**
 
 Run (Bash tool):
 ```bash

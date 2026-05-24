@@ -3,10 +3,9 @@ setlocal enabledelayedexpansion
 
 rem Install skills from this repo into one or more agent config dirs.
 rem
-rem Each top-level dir here is a skill submodule. Installable content is
-rem either <skill>\skill-draft\ (legacy layout) or <skill>\ itself (new
-rem layout, detected by a SKILL.md at the root). Dev-only files are
-rem excluded for the root layout.
+rem Each top-level dir here is a skill submodule with a SKILL.md at its
+rem root. Installable content is <skill>\ itself; dev-only files are
+rem excluded for the root layout (see EXCLUDE_DIRS / EXCLUDE_FILES).
 rem
 rem Usage: install-skills.bat [-y] [-n] [--claude] [--pi] [--hermes] [--gemini] [--codex] [--all] [skill ...]
 rem   -y / --yes       overwrite without prompting
@@ -53,8 +52,8 @@ goto parse_args
 :parse_done
 if "%DEST_COUNT%"=="0" call :add_dest claude "%USERPROFILE%\.claude\skills"
 
-rem Excludes applied only to the root layout.
-set "EXCLUDE_DIRS=.git .github docs evals node_modules reports skill-draft tests"
+rem Dev-only files excluded when installing a skill.
+set "EXCLUDE_DIRS=.git .github docs evals node_modules reports tests"
 set "EXCLUDE_FILES=.git .gitignore .gitmodules README.md AUDIT.md LICENSE HANDOFF.md capture-screenshot.py regen-screenshots.sh regen-screenshots.bat"
 
 for /d %%D in ("%SRC_ROOT%\*") do (
@@ -106,14 +105,11 @@ set "dest_root=%~4"
 set "content_dir="
 set "layout="
 
-if exist "!src!\skill-draft\" (
-    set "content_dir=!src!\skill-draft"
-    set "layout=draft"
-) else if exist "!src!\SKILL.md" (
+if exist "!src!\SKILL.md" (
     set "content_dir=!src!"
     set "layout=root"
 ) else (
-    echo skip !n! ^(no SKILL.md and no skill-draft\^)
+    echo skip !n! ^(no SKILL.md^)
     exit /b 0
 )
 
