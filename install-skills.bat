@@ -53,7 +53,7 @@ goto parse_args
 if "%DEST_COUNT%"=="0" call :add_dest claude "%USERPROFILE%\.claude\skills"
 
 rem Dev-only files excluded when installing a skill.
-set "EXCLUDE_DIRS=.git .github docs evals node_modules reports tests"
+set "EXCLUDE_DIRS=.git .github docs evals node_modules reports tests workspace smoke-test-workspace"
 set "EXCLUDE_FILES=.git .gitignore .gitmodules README.md AUDIT.md LICENSE HANDOFF.md capture-screenshot.py regen-screenshots.sh regen-screenshots.bat"
 
 for /d %%D in ("%SRC_ROOT%\*") do (

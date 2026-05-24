@@ -69,7 +69,7 @@ fi
 ROOT_EXCLUDES=(
     .git .gitignore .gitmodules .github
     README.md AUDIT.md LICENSE HANDOFF.md
-    docs evals node_modules reports tests
+    docs evals node_modules reports tests workspace smoke-test-workspace
     capture-screenshot.py regen-screenshots.sh regen-screenshots.bat
 )
 
