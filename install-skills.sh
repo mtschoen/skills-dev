@@ -30,7 +30,7 @@ DESTINATIONS=()
 add_destination() {
     local name="$1" path="$2"
     local existing
-    for existing in "${DESTINATIONS[@]}"; do
+    for existing in ${DESTINATIONS[@]+"${DESTINATIONS[@]}"}; do
         [ "$existing" = "$name|$path" ] && return 0
     done
     DESTINATIONS+=("$name|$path")
@@ -79,7 +79,7 @@ is_selected() {
     local name="$1"
     if ! has_selection; then return 0; fi
     local s
-    for s in "${SELECTED[@]}"; do [ "$s" = "$name" ] && return 0; done
+    for s in ${SELECTED[@]+"${SELECTED[@]}"}; do [ "$s" = "$name" ] && return 0; done
     return 1
 }
 
