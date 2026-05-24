@@ -1,6 +1,6 @@
 # skills-ref Validation Upgrade Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace skills-dev's hand-rolled SKILL.md frontmatter validator with the official Agent Skills validator (`agentskills`, from the pinned `skills-ref==0.1.1` PyPI package), keeping only the fleet-level logic that is irreducibly ours, and add skill-content validation by extending the existing markdownlint CI.
 
@@ -31,7 +31,7 @@ Each skill is its own submodule repo with a full `.git`. Daily git ops read from
 
 ### Task 1.1: Preflight — ensure all 8 submodules are on `main` and current
 
-- [ ] **Step 1: Confirm each skill-draft submodule is on `main`, not detached HEAD**
+- [x] **Step 1: Confirm each skill-draft submodule is on `main`, not detached HEAD**
 
 A submodule checked out at the superproject's pinned SHA is often in detached HEAD; committing there creates a dangling commit. Put each on `main` first.
 
@@ -48,7 +48,7 @@ done
 ```
 Expected: each prints `=== <skill> ===` then ends on `main`, up to date. If any `pull --ff-only` fails (diverged), stop and reconcile that repo before proceeding.
 
-- [ ] **Step 2: Confirm clean working trees**
+- [x] **Step 2: Confirm clean working trees**
 
 Run (Bash tool):
 ```bash
@@ -63,7 +63,7 @@ Expected: no output under each header (clean). Stash/commit any stray changes be
 
 Do this skill-by-skill so each repo gets one clean commit. The command sequence is identical for all 8; only `<S>` changes.
 
-- [ ] **Step 1: Move contents up and remove skill-draft/ (per skill)**
+- [x] **Step 1: Move contents up and remove skill-draft/ (per skill)**
 
 For each `<S>` in the 8 skills, run (Bash tool):
 ```bash
@@ -75,7 +75,7 @@ git status --short
 ```
 Expected `git status --short` shows renames like `R  skill-draft/SKILL.md -> SKILL.md` (and `references/...`, `tests/...` for the skills that have them). `skill-draft/` is gone.
 
-- [ ] **Step 2: Verify SKILL.md's relative references still resolve**
+- [x] **Step 2: Verify SKILL.md's relative references still resolve**
 
 Run (Bash tool):
 ```bash
@@ -91,7 +91,7 @@ grep -n "tests/" SKILL.md || echo "OK: tests/ not referenced from SKILL.md"
 ```
 Expected: `OK: tests/ not referenced from SKILL.md`.
 
-- [ ] **Step 3: Commit in the submodule**
+- [x] **Step 3: Commit in the submodule**
 
 Run (Bash tool):
 ```bash
@@ -105,7 +105,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
 Expected: one commit on `main` recording the renames.
 
-- [ ] **Step 4: Push to both remotes**
+- [x] **Step 4: Push to both remotes**
 
 Run (Bash tool):
 ```bash
@@ -114,13 +114,13 @@ git push github main
 ```
 Expected: both succeed. If `origin` rejects (the pr-crew bot advanced main), `git pull --ff-only origin main` then re-push.
 
-- [ ] **Step 5: Repeat Steps 1–4 for all 8 skills**
+- [x] **Step 5: Repeat Steps 1–4 for all 8 skills**
 
 Skills (do each): `find-task`, `maintaining-full-coverage`, `reconcile-tasks`, `smoke-test`, `fleet-orchestration`, `project-maintenance`, `unity-batchmode-worktree`, `remote-claude`.
 
 ### Task 1.3: Bump the 8 submodule pointers in skills-dev
 
-- [ ] **Step 1: Create the working branch and stage the advanced pointers**
+- [x] **Step 1: Create the working branch and stage the advanced pointers**
 
 Run (Bash tool):
 ```bash
@@ -132,7 +132,7 @@ git status --short
 ```
 Expected: 8 lines like `M  smoke-test` (submodule new-commits). The pre-existing `running-spikes` modification is NOT staged — leave it alone.
 
-- [ ] **Step 2: Commit the pointer bump**
+- [x] **Step 2: Commit the pointer bump**
 
 Run (Bash tool):
 ```bash
