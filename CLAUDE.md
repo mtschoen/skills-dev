@@ -38,7 +38,7 @@ The detailed concrete steps (with current Gitea endpoints and Windows gotchas) l
 
 ## Layout
 
-Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `evals/`, `README.md`, and `workspace/` (gitignored). The legacy `skill-draft/` layout is deprecated; new skills use the root layout. The installer (`install-skills.{sh,bat}`) detects which layout is in use and excludes dev-only files (`evals/`, `README.md`, `LICENSE`, etc.) for root-layout skills.
+Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `evals/`, `README.md`, and `workspace/` (gitignored). The installer (`install-skills.{sh,bat}`) installs from the skill root, excluding dev-only files (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.). Skill validation is delegated to the official Agent Skills validator: CI runs `agentskills validate` (pinned `skills-ref==0.1.1`) over every `.gitmodules` skill via `scripts/validate_skills.py`, which keeps the fleet-level anti-vacuous / WIP-skip guards; markdownlint covers skill prose content.
 
 ## Working across all submodules
 

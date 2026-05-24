@@ -111,7 +111,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ### Task 4.5: End-to-end verification
 
-- [ ] **Step 1: Reinstall skills locally (layouts changed)**
+- [x] **Step 1: Reinstall skills locally (layouts changed)**
 
 Run (PowerShell):
 ```powershell
@@ -135,7 +135,7 @@ Remove-Item -Recurse -Force .\.claude\spikes\skills-ref-verify
 ```
 (It's gitignored, so this is tidiness only.)
 
-- [ ] **Step 4: Update CLAUDE.md layout note**
+- [x] **Step 4: Update CLAUDE.md layout note**
 
 **Files:** Modify `CLAUDE.md` (the "Layout" section)
 
@@ -151,7 +151,7 @@ delegated to the official Agent Skills validator: CI runs `agentskills validate`
 guards; markdownlint covers skill prose content.
 ```
 
-- [ ] **Step 5: Commit the docs update**
+- [x] **Step 5: Commit the docs update**
 
 Run (Bash tool):
 ```bash
