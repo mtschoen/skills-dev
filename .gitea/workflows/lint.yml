@@ -16,3 +16,21 @@ jobs:
         with:
           submodules: false
       - uses: DavidAnson/markdownlint-cli2-action@v23
+
+  frontmatter:
+    # Parse every skill's SKILL.md YAML frontmatter. Catches the class of bug
+    # markdownlint can't see (it strips frontmatter): an apostrophe in a
+    # single-quoted scalar, a flattened block scalar, a missing/empty
+    # name/description. Needs submodules checked out (unlike the markdown job).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install pyyaml
+      - name: Validate SKILL.md frontmatter across all skills
+        run: python scripts/validate_skill_frontmatter.py
