@@ -5,16 +5,18 @@
 # The installable content is `<skill>/` itself; dev-only files (evals/,
 # tests/, README, LICENSE, etc.) are excluded — see ROOT_EXCLUDES.
 #
-# Usage: ./install-skills.sh [-y] [-n] [--claude] [--pi] [--hermes] [--gemini] [--codex] [--all] [skill ...]
+# Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 #   -y / --yes       overwrite without prompting
 #   -n / --dry-run   show what would change, don't copy
-#   --claude         install to ~/.claude/skills (default when no agent flag is given)
-#   --pi             install to ~/.pi/agent/skills
-#   --hermes         install to ~/.hermes/skills
-#   --gemini         install to ~/.gemini/skills
-#   --codex          install to ~/.codex/skills
+#   --agents         install to ~/.agents/skills (canonical source of truth)
+#   --claude         install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
+#   --gemini         install to ~/.gemini/skills (Antigravity's global skills dir)
 #   --all            install to all known agent skill dirs
 #   positional args  limit to specific skill names (default: all)
+#
+# With no agent flag, installs to ~/.agents/skills plus the two harnesses that
+# can't read it directly: ~/.claude/skills (Claude) and ~/.gemini/skills
+# (Antigravity). Codex reads ~/.agents/skills natively, so it needs no copy.
 
 set -euo pipefail
 
@@ -35,25 +37,21 @@ add_destination() {
 }
 
 add_all_destinations() {
+    add_destination agents "${HOME}/.agents/skills"
     add_destination claude "${HOME}/.claude/skills"
-    add_destination pi "${HOME}/.pi/agent/skills"
-    add_destination hermes "${HOME}/.hermes/skills"
     add_destination gemini "${HOME}/.gemini/skills"
-    add_destination codex "${HOME}/.codex/skills"
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -y|--yes) ASSUME_YES=1; shift ;;
         -n|--dry-run) DRY_RUN=1; shift ;;
+        --agents) add_destination agents "${HOME}/.agents/skills"; shift ;;
         --claude) add_destination claude "${HOME}/.claude/skills"; shift ;;
-        --pi) add_destination pi "${HOME}/.pi/agent/skills"; shift ;;
-        --hermes) add_destination hermes "${HOME}/.hermes/skills"; shift ;;
         --gemini) add_destination gemini "${HOME}/.gemini/skills"; shift ;;
-        --codex) add_destination codex "${HOME}/.codex/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         -h|--help)
-            sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -61,13 +59,16 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
+    add_destination agents "${HOME}/.agents/skills"
     add_destination claude "${HOME}/.claude/skills"
+    add_destination gemini "${HOME}/.gemini/skills"
 fi
 
 # Files/dirs excluded when installing a skill — dev-only content that
 # should not ship into the agent skills dir.
 ROOT_EXCLUDES=(
-    .git .gitignore .gitmodules .github
+    .git .gitignore .gitmodules .github .gitea
+    .markdownlint-cli2.jsonc
     README.md AUDIT.md LICENSE HANDOFF.md
     docs evals node_modules reports tests workspace smoke-test-workspace
     capture-screenshot.py regen-screenshots.sh regen-screenshots.bat

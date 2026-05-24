@@ -16,29 +16,31 @@ git submodule update --init --recursive
 
 ## Installing skills
 
-`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. By default they install only to `~/.claude/skills/` so Claude Code picks them up; pass agent flags to install elsewhere.
+`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. The canonical source of truth is `~/.agents/skills/`, which **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills/)) both read natively as a global skills path. Two harnesses can't read it and so are kept as mirrors:
+
+- **Claude Code** is hardcoded to `~/.claude/skills/` with no setting to redirect it ([anthropics/claude-code#22902](https://github.com/anthropics/claude-code/issues/22902), [#33957](https://github.com/anthropics/claude-code/issues/33957)).
+- **Antigravity** loads global skills from `~/.gemini/skills/`; its `.agents/skills` is workspace-only.
+
+So the default install writes to all three — `~/.agents/skills/` plus mirrors at `~/.claude/skills/` and `~/.gemini/skills/` — rather than relying on symlinks. Pass agent flags to narrow the targets.
 
 ```bash
-./install-skills.sh           # interactive: install to Claude, prompts before overwriting changed installs
+./install-skills.sh           # default: ~/.agents/skills + ~/.claude/skills + ~/.gemini/skills
 ./install-skills.sh -y        # overwrite without prompting
 ./install-skills.sh -n        # dry run; show what would change
-./install-skills.sh --pi      # install to ~/.pi/agent/skills instead
-./install-skills.sh --all     # install to Claude, pi, Hermes, Gemini, and Codex
-./install-skills.sh --pi --codex smoke-test pushback   # limit destinations and skills
+./install-skills.sh --agents  # only the canonical ~/.agents/skills
+./install-skills.sh --claude smoke-test pushback   # limit destinations and skills
 ```
 
 Supported destination flags:
 
 | Flag | Destination |
 |---|---|
-| `--claude` | `~/.claude/skills` |
-| `--pi` | `~/.pi/agent/skills` |
-| `--hermes` | `~/.hermes/skills` |
-| `--gemini` | `~/.gemini/skills` |
-| `--codex` | `~/.codex/skills` |
+| `--agents` | `~/.agents/skills` (canonical; read natively by Codex and opencode) |
+| `--claude` | `~/.claude/skills` (Claude Code's mirror) |
+| `--gemini` | `~/.gemini/skills` (Antigravity's global skills dir) |
 | `--all` | all of the above |
 
-Each skill directory either has `SKILL.md` at its root (new layout) or a `skill-draft/` subdirectory (legacy layout). The installer detects which and copies the right content; dev-only files (`evals/`, `docs/`, `README.md`, etc.) are excluded for the root layout.
+Each skill directory either has `SKILL.md` at its root (new layout) or a `skill-draft/` subdirectory (legacy layout). The installer detects which and copies the right content; dev-only files (`evals/`, `docs/`, `README.md`, `.gitea/`, `.markdownlint-cli2.jsonc`, etc.) are excluded for the root layout.
 
 ## Working across all submodules
 
@@ -59,7 +61,7 @@ skills-dev/
 │   ├── SKILL.md         # the skill itself
 │   ├── evals/           # eval harness (dev-only, not installed)
 │   └── ...
-├── install-skills.sh    # install -> ~/.claude/skills/
+├── install-skills.sh    # install -> ~/.agents/skills/ (+ Claude & Antigravity mirrors)
 ├── install-skills.bat
 └── scripts/
     ├── push-all.sh

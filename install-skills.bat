@@ -7,16 +7,18 @@ rem Each top-level dir here is a skill submodule with a SKILL.md at its
 rem root. Installable content is <skill>\ itself; dev-only files are
 rem excluded for the root layout (see EXCLUDE_DIRS / EXCLUDE_FILES).
 rem
-rem Usage: install-skills.bat [-y] [-n] [--claude] [--pi] [--hermes] [--gemini] [--codex] [--all] [skill ...]
+rem Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 rem   -y / --yes       overwrite without prompting
 rem   -n / --dry-run   show what would change, don't copy
-rem   --claude         install to %%USERPROFILE%%\.claude\skills (default when no agent flag is given)
-rem   --pi             install to %%USERPROFILE%%\.pi\agent\skills
-rem   --hermes         install to %%USERPROFILE%%\.hermes\skills
-rem   --gemini         install to %%USERPROFILE%%\.gemini\skills
-rem   --codex          install to %%USERPROFILE%%\.codex\skills
+rem   --agents         install to %%USERPROFILE%%\.agents\skills (canonical source of truth)
+rem   --claude         install to %%USERPROFILE%%\.claude\skills (Claude's mirror of .agents\skills)
+rem   --gemini         install to %%USERPROFILE%%\.gemini\skills (Antigravity's global skills dir)
 rem   --all            install to all known agent skill dirs
 rem   positional args  limit to specific skill names (default: all)
+rem
+rem With no agent flag, installs to .agents\skills plus the two harnesses that
+rem can't read it directly: .claude\skills (Claude) and .gemini\skills
+rem (Antigravity). Codex reads .agents\skills natively, so it needs no copy.
 
 set "SRC_ROOT=%~dp0"
 if "%SRC_ROOT:~-1%"=="\" set "SRC_ROOT=%SRC_ROOT:~0,-1%"
@@ -32,11 +34,9 @@ if /i "%~1"=="-y"         (set "ASSUME_YES=1" & shift & goto parse_args)
 if /i "%~1"=="--yes"      (set "ASSUME_YES=1" & shift & goto parse_args)
 if /i "%~1"=="-n"         (set "DRY_RUN=1"    & shift & goto parse_args)
 if /i "%~1"=="--dry-run"  (set "DRY_RUN=1"    & shift & goto parse_args)
+if /i "%~1"=="--agents"   (call :add_dest agents "%USERPROFILE%\.agents\skills" & shift & goto parse_args)
 if /i "%~1"=="--claude"   (call :add_dest claude "%USERPROFILE%\.claude\skills" & shift & goto parse_args)
-if /i "%~1"=="--pi"       (call :add_dest pi "%USERPROFILE%\.pi\agent\skills" & shift & goto parse_args)
-if /i "%~1"=="--hermes"   (call :add_dest hermes "%USERPROFILE%\.hermes\skills" & shift & goto parse_args)
 if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\skills" & shift & goto parse_args)
-if /i "%~1"=="--codex"    (call :add_dest codex "%USERPROFILE%\.codex\skills" & shift & goto parse_args)
 if /i "%~1"=="--all"      (call :add_all_dests & shift & goto parse_args)
 if /i "%~1"=="-h"         goto usage
 if /i "%~1"=="--help"     goto usage
@@ -50,11 +50,15 @@ shift
 goto parse_args
 
 :parse_done
-if "%DEST_COUNT%"=="0" call :add_dest claude "%USERPROFILE%\.claude\skills"
+if "%DEST_COUNT%"=="0" (
+    call :add_dest agents "%USERPROFILE%\.agents\skills"
+    call :add_dest claude "%USERPROFILE%\.claude\skills"
+    call :add_dest gemini "%USERPROFILE%\.gemini\skills"
+)
 
 rem Dev-only files excluded when installing a skill.
-set "EXCLUDE_DIRS=.git .github docs evals node_modules reports tests workspace smoke-test-workspace"
-set "EXCLUDE_FILES=.git .gitignore .gitmodules README.md AUDIT.md LICENSE HANDOFF.md capture-screenshot.py regen-screenshots.sh regen-screenshots.bat"
+set "EXCLUDE_DIRS=.git .github .gitea docs evals node_modules reports tests workspace smoke-test-workspace"
+set "EXCLUDE_FILES=.git .gitignore .gitmodules .markdownlint-cli2.jsonc README.md AUDIT.md LICENSE HANDOFF.md capture-screenshot.py regen-screenshots.sh regen-screenshots.bat"
 
 for /d %%D in ("%SRC_ROOT%\*") do (
     set "name=%%~nxD"
@@ -75,11 +79,9 @@ set "DEST_%DEST_COUNT%_PATH=%~2"
 exit /b 0
 
 :add_all_dests
+call :add_dest agents "%USERPROFILE%\.agents\skills"
 call :add_dest claude "%USERPROFILE%\.claude\skills"
-call :add_dest pi "%USERPROFILE%\.pi\agent\skills"
-call :add_dest hermes "%USERPROFILE%\.hermes\skills"
 call :add_dest gemini "%USERPROFILE%\.gemini\skills"
-call :add_dest codex "%USERPROFILE%\.codex\skills"
 exit /b 0
 
 :maybe_install
@@ -185,14 +187,14 @@ exit /b 1
 :usage
 echo Install skills from this repo into one or more agent config dirs.
 echo.
-echo Usage: install-skills.bat [-y] [-n] [--claude] [--pi] [--hermes] [--gemini] [--codex] [--all] [skill ...]
+echo Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 echo   -y / --yes       overwrite without prompting
 echo   -n / --dry-run   show what would change, don't copy
-echo   --claude         install to %%USERPROFILE%%\.claude\skills ^(default when no agent flag is given^)
-echo   --pi             install to %%USERPROFILE%%\.pi\agent\skills
-echo   --hermes         install to %%USERPROFILE%%\.hermes\skills
-echo   --gemini         install to %%USERPROFILE%%\.gemini\skills
-echo   --codex          install to %%USERPROFILE%%\.codex\skills
+echo   --agents         install to %%USERPROFILE%%\.agents\skills ^(canonical source of truth^)
+echo   --claude         install to %%USERPROFILE%%\.claude\skills ^(Claude's mirror of .agents\skills^)
+echo   --gemini         install to %%USERPROFILE%%\.gemini\skills ^(Antigravity's global skills dir^)
 echo   --all            install to all known agent skill dirs
 echo   positional args  limit to specific skill names ^(default: all^)
+echo.
+echo With no agent flag, installs to .agents\skills, .claude\skills, and .gemini\skills.
 exit /b 0
