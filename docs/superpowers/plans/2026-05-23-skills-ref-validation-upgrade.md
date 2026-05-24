@@ -12,163 +12,6 @@
 
 ---
 
-## Phase 2: Simplify the installer (drop the dual-path branch)
-
-All skills are root layout now, so the `skill-draft/` detection and exclude are dead code.
-
-### Task 2.1: Simplify `install-skills.sh`
-
-**Files:** Modify `install-skills.sh`
-
-- [x] **Step 1: Update the header comment**
-
-Replace lines 4–7:
-```bash
-# Each top-level dir here is a skill submodule. The installable content is
-# either `<skill>/skill-draft/` (legacy layout) or `<skill>/` itself (new
-# layout, detected by a SKILL.md at the root). Dev-only files are excluded
-# for the root layout.
-```
-with:
-```bash
-# Each top-level dir here is a skill submodule with a SKILL.md at its root.
-# The installable content is `<skill>/` itself; dev-only files (evals/,
-# tests/, README, LICENSE, etc.) are excluded — see ROOT_EXCLUDES.
-```
-
-- [x] **Step 2: Remove `skill-draft` from `ROOT_EXCLUDES`**
-
-In the `ROOT_EXCLUDES=(...)` array, delete the line containing just `skill-draft` (currently line 75).
-
-- [x] **Step 3: Collapse the layout detection in `install_skill_to_destination`**
-
-Replace this block (currently lines 135–145):
-```bash
-    local content_dir layout
-    if [ -d "$src_dir/skill-draft" ]; then
-        content_dir="$src_dir/skill-draft"
-        layout="draft"
-    elif [ -f "$src_dir/SKILL.md" ]; then
-        content_dir="$src_dir"
-        layout="root"
-    else
-        echo "skip $name (no SKILL.md and no skill-draft/)"
-        return
-    fi
-```
-with:
-```bash
-    local content_dir layout
-    if [ -f "$src_dir/SKILL.md" ]; then
-        content_dir="$src_dir"
-        layout="root"
-    else
-        echo "skip $name (no SKILL.md)"
-        return
-    fi
-```
-(`layout` stays — `sync_dir`/`diff_args_for` branch on `"$layout" = "root"`, which is now always true; leaving the variable avoids touching those functions.)
-
-### Task 2.2: Simplify `install-skills.bat`
-
-**Files:** Modify `install-skills.bat`
-
-- [x] **Step 1: Update the header comment**
-
-Replace lines 6–9:
-```bat
-rem Each top-level dir here is a skill submodule. Installable content is
-rem either <skill>\skill-draft\ (legacy layout) or <skill>\ itself (new
-rem layout, detected by a SKILL.md at the root). Dev-only files are
-rem excluded for the root layout.
-```
-with:
-```bat
-rem Each top-level dir here is a skill submodule with a SKILL.md at its
-rem root. Installable content is <skill>\ itself; dev-only files are
-rem excluded for the root layout (see EXCLUDE_DIRS / EXCLUDE_FILES).
-```
-
-- [x] **Step 2: Remove `skill-draft` from `EXCLUDE_DIRS`**
-
-Change line 57 from:
-```bat
-set "EXCLUDE_DIRS=.git .github docs evals node_modules reports skill-draft tests"
-```
-to:
-```bat
-set "EXCLUDE_DIRS=.git .github docs evals node_modules reports tests"
-```
-
-- [x] **Step 3: Collapse the layout detection in `:install_skill`**
-
-Replace this block (currently lines 109–118):
-```bat
-if exist "!src!\skill-draft\" (
-    set "content_dir=!src!\skill-draft"
-    set "layout=draft"
-) else if exist "!src!\SKILL.md" (
-    set "content_dir=!src!"
-    set "layout=root"
-) else (
-    echo skip !n! ^(no SKILL.md and no skill-draft\^)
-    exit /b 0
-)
-```
-with:
-```bat
-if exist "!src!\SKILL.md" (
-    set "content_dir=!src!"
-    set "layout=root"
-) else (
-    echo skip !n! ^(no SKILL.md^)
-    exit /b 0
-)
-```
-
-- [x] **Step 4: Verify the .bat still has CRLF line endings**
-
-The Write/Edit tools emit LF on Windows; cmd.exe needs CRLF for `:label` lookup. Run (Bash tool):
-```bash
-cd /c/Users/mtsch/skills-dev
-file install-skills.bat   # or: grep -c $'\r' install-skills.bat
-sed -i 's/\([^\r]\)$/\1\r/' install-skills.bat   # only if lines lack CR
-```
-Expected: lines end with CRLF. (Skip the `sed` if already CRLF.)
-
-### Task 2.3: Verify the installer (dry-run)
-
-- [x] **Step 1: Dry-run a root-layout skill that didn't change — expect no surprises**
-
-Run (PowerShell):
-```powershell
-.\install-skills.bat -n pushback
-```
-Expected: `unchanged pushback (claude)` (or a diff if it was edited), never a `skip`.
-
-- [x] **Step 2: Dry-run a migrated skill — expect it now installs from root layout**
-
-Run (PowerShell):
-```powershell
-.\install-skills.bat -n smoke-test remote-claude
-```
-Expected: an `update`/`unchanged` line for each, no `skip ... no SKILL.md`. For remote-claude the diff may show `tests/` being removed from the installed copy — that is correct (now excluded).
-
-- [x] **Step 3: Commit the installer changes**
-
-Run (Bash tool):
-```bash
-git add install-skills.sh install-skills.bat
-git commit -m "refactor: drop skill-draft layout from installers
-
-All skills are root layout now; remove the dual-path branch and the
-skill-draft exclude.
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
-
----
-
 ## Phase 3: Swap the validator engine to agentskills
 
 Replace the hand-rolled frontmatter parser with a thin fleet wrapper around `agentskills validate`. Keep the validator on PATH locally via the scratch venv so integration tests run:
@@ -181,7 +24,7 @@ Add it to PATH for the test runs, e.g. (PowerShell): `$env:PATH = "$PWD\.claude\
 
 **Files:** Rename `scripts/validate_skill_frontmatter.py` → `scripts/validate_skills.py`; `scripts/test_validate_skill_frontmatter.py` → `scripts/test_validate_skills.py`
 
-- [ ] **Step 1: git mv both files**
+- [x] **Step 1: git mv both files**
 
 Run (Bash tool):
 ```bash
@@ -194,7 +37,7 @@ git mv scripts/test_validate_skill_frontmatter.py scripts/test_validate_skills.p
 
 **Files:** Overwrite `scripts/test_validate_skills.py`
 
-- [ ] **Step 1: Replace the entire test file with this content**
+- [x] **Step 1: Replace the entire test file with this content**
 
 ```python
 #!/usr/bin/env python3
@@ -370,7 +213,7 @@ if __name__ == "__main__":
     sys.exit(_run_all())
 ```
 
-- [ ] **Step 2: Run the tests — expect failure (validate_skills still has the old API)**
+- [x] **Step 2: Run the tests — expect failure (validate_skills still has the old API)**
 
 Run (PowerShell):
 ```powershell
@@ -382,7 +225,7 @@ Expected: failures/errors — the old module has no `runner=` parameter and stil
 
 **Files:** Overwrite `scripts/validate_skills.py`
 
-- [ ] **Step 1: Replace the entire module with this content**
+- [x] **Step 1: Replace the entire module with this content**
 
 ```python
 #!/usr/bin/env python3
@@ -521,7 +364,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Run the tests with agentskills on PATH — expect all pass**
+- [x] **Step 2: Run the tests with agentskills on PATH — expect all pass**
 
 Run (PowerShell):
 ```powershell
@@ -530,7 +373,7 @@ python scripts\test_validate_skills.py
 ```
 Expected: `PASS` for every test (including the two integration tests — `agentskills` is on PATH), ending `N/N passed`.
 
-- [ ] **Step 3: Run the validator against the real repo — expect all skills valid**
+- [x] **Step 3: Run the validator against the real repo — expect all skills valid**
 
 Run (PowerShell, with agentskills on PATH from Step 2):
 ```powershell
@@ -538,7 +381,7 @@ python scripts\validate_skills.py
 ```
 Expected: `OK: all 16 skills valid (agentskills)` plus a `note: skipped ...` for any WIP submodule (e.g. `review-in-parallel-pipelines`, which has no SKILL.md). Exit 0.
 
-- [ ] **Step 4: Commit the validator swap**
+- [x] **Step 4: Commit the validator swap**
 
 Run (Bash tool):
 ```bash
