@@ -6,6 +6,6 @@
     "MD041": false,
     "MD060": false
   },
-  "globs": ["*.md", "docs/**/*.md"],
-  "ignores": ["node_modules"]
+  "globs": ["*.md", "docs/**/*.md", "*/*.md", "*/references/**/*.md"],
+  "ignores": ["node_modules", "docs/superpowers/plans/**", "docs/superpowers/specs/**"]
 }

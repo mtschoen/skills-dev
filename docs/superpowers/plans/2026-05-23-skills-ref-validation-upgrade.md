@@ -12,401 +12,13 @@
 
 ---
 
-## Phase 3: Swap the validator engine to agentskills
-
-Replace the hand-rolled frontmatter parser with a thin fleet wrapper around `agentskills validate`. Keep the validator on PATH locally via the scratch venv so integration tests run:
-```
-.claude/spikes/skills-ref-verify/Scripts/  (Windows)  — contains agentskills.exe
-```
-Add it to PATH for the test runs, e.g. (PowerShell): `$env:PATH = "$PWD\.claude\spikes\skills-ref-verify\Scripts;$env:PATH"`.
-
-### Task 3.1: Rename the script and its tests (preserve history)
-
-**Files:** Rename `scripts/validate_skill_frontmatter.py` → `scripts/validate_skills.py`; `scripts/test_validate_skill_frontmatter.py` → `scripts/test_validate_skills.py`
-
-- [x] **Step 1: git mv both files**
-
-Run (Bash tool):
-```bash
-cd /c/Users/mtsch/skills-dev
-git mv scripts/validate_skill_frontmatter.py scripts/validate_skills.py
-git mv scripts/test_validate_skill_frontmatter.py scripts/test_validate_skills.py
-```
-
-### Task 3.2: Rewrite the test file for the new contract (TDD — tests first)
-
-**Files:** Overwrite `scripts/test_validate_skills.py`
-
-- [x] **Step 1: Replace the entire test file with this content**
-
-```python
-#!/usr/bin/env python3
-"""Tests for validate_skills.
-
-Fleet-logic tests inject a fake runner and need no external tools. Integration
-tests invoke the real `agentskills` binary and are skipped if it isn't on PATH.
-
-Runs under pytest, or standalone: python scripts/test_validate_skills.py
-(no third-party dependency).
-"""
-import shutil
-import sys
-import tempfile
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import validate_skills as validator
-
-
-def _gitmodules(paths):
-    return "".join(
-        f'[submodule "{p}"]\n\tpath = {p}\n\turl = ../skills-{p}.git\n' for p in paths
-    )
-
-
-def _good_skill(name):
-    return f'---\nname: {name}\ndescription: "A valid one-line description."\n---\n\n# Title\n'
-
-
-def _make_repo(skills):
-    """skills: dict name -> SKILL.md text | None (empty dir) | dict (files, no SKILL.md)."""
-    root = Path(tempfile.mkdtemp())
-    (root / ".gitmodules").write_text(_gitmodules(list(skills)), encoding="utf-8")
-    for name, content in skills.items():
-        d = root / name
-        if content is None:
-            d.mkdir(parents=True, exist_ok=True)
-        elif isinstance(content, dict):
-            d.mkdir(parents=True, exist_ok=True)
-            for filename, body in content.items():
-                (d / filename).write_text(body, encoding="utf-8")
-        else:
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "SKILL.md").write_text(content, encoding="utf-8")
-    return root
-
-
-def _pass_runner(skill_dir):
-    return (0, f"Valid skill: {skill_dir}")
-
-
-def _fail_runner(skill_dir):
-    return (1, f"Validation failed for {skill_dir}:\n  - some rule violated")
-
-
-# --- parse_submodule_paths ---
-
-def test_parse_submodule_paths_reads_every_path():
-    assert validator.parse_submodule_paths(_gitmodules(["foo", "bar-baz"])) == ["foo", "bar-baz"]
-
-
-def test_parse_submodule_paths_empty_returns_empty_list():
-    assert validator.parse_submodule_paths("") == []
-
-
-# --- validate_skill fleet logic (injected runner, no external tool) ---
-
-def test_good_skill_passes():
-    repo = _make_repo({"alpha": _good_skill("alpha")})
-    assert validator.validate_skill(repo, "alpha", runner=_pass_runner) == []
-
-
-def test_invalid_skill_surfaces_runner_output():
-    repo = _make_repo({"alpha": _good_skill("alpha")})
-    errors = validator.validate_skill(repo, "alpha", runner=_fail_runner)
-    assert errors, "a non-zero runner exit must surface as errors"
-    assert all(e.startswith("alpha:") for e in errors), errors
-    assert any("some rule violated" in e for e in errors), errors
-
-
-def test_empty_submodule_dir_is_an_error():
-    repo = _make_repo({"alpha": None})
-    errors = validator.validate_skill(repo, "alpha", runner=_pass_runner)
-    assert errors and any("check" in e.lower() for e in errors), errors
-
-
-def test_wip_submodule_with_content_but_no_skill_md_is_skipped():
-    repo = _make_repo({"alpha": {"HANDOFF.md": "wip notes\n", "LICENSE": "x\n"}})
-    assert validator.validate_skill(repo, "alpha", runner=_pass_runner) == []
-
-
-# --- validate_repo / evaluate ---
-
-def test_validate_repo_counts_validated_skills():
-    repo = _make_repo({"alpha": _good_skill("alpha"), "beta": _good_skill("beta")})
-    errors, validated, skipped = validator.validate_repo(repo, runner=_pass_runner)
-    assert errors == [] and validated == 2 and skipped == []
-
-
-def test_validate_repo_reports_skipped_wip():
-    repo = _make_repo({"alpha": _good_skill("alpha"), "wip": {"HANDOFF.md": "n\n"}})
-    errors, validated, skipped = validator.validate_repo(repo, runner=_pass_runner)
-    assert errors == [] and validated == 1 and skipped == ["wip"]
-
-
-def test_evaluate_clean_repo_exits_zero():
-    repo = _make_repo({"alpha": _good_skill("alpha")})
-    code, _lines = validator.evaluate(repo, runner=_pass_runner)
-    assert code == 0
-
-
-def test_evaluate_invalid_repo_exits_one():
-    repo = _make_repo({"alpha": _good_skill("alpha")})
-    code, _lines = validator.evaluate(repo, runner=_fail_runner)
-    assert code == 1
-
-
-def test_evaluate_broken_checkout_empty_dirs_exits_one():
-    code, _lines = validator.evaluate(_make_repo({"alpha": None, "beta": None}), runner=_pass_runner)
-    assert code == 1
-
-
-def test_evaluate_no_submodules_refuses_vacuous_pass():
-    repo = Path(tempfile.mkdtemp())
-    (repo / ".gitmodules").write_text("", encoding="utf-8")
-    code, lines = validator.evaluate(repo, runner=_pass_runner)
-    assert code == 2, "an empty submodule set must not pass — that hides a broken checkout"
-    assert any("vacuous" in line.lower() for line in lines)
-
-
-# --- integration: the real agentskills binary (skipped if not installed) ---
-
-_AGENTSKILLS = shutil.which("agentskills")
-
-
-def test_integration_real_good_skill():
-    if _AGENTSKILLS is None:
-        print("SKIP test_integration_real_good_skill (agentskills not on PATH)")
-        return
-    repo = _make_repo({"alpha": _good_skill("alpha")})
-    assert validator.validate_skill(repo, "alpha") == []
-
-
-def test_integration_real_bad_skill_name_mismatch():
-    if _AGENTSKILLS is None:
-        print("SKIP test_integration_real_bad_skill_name_mismatch (agentskills not on PATH)")
-        return
-    repo = _make_repo({"alpha": _good_skill("not-alpha")})
-    errors = validator.validate_skill(repo, "alpha")
-    assert errors, "agentskills must reject a skill whose name != parent dir"
-
-
-def _run_all():
-    tests = [(name, obj) for name, obj in sorted(globals().items())
-             if name.startswith("test_") and callable(obj)]
-    failures = []
-    for name, fn in tests:
-        try:
-            fn()
-            print(f"PASS {name}")
-        except AssertionError as exc:
-            failures.append((name, f"AssertionError: {exc}"))
-            print(f"FAIL {name}: {exc}")
-        except Exception as exc:  # noqa: BLE001
-            failures.append((name, f"{type(exc).__name__}: {exc}"))
-            print(f"ERROR {name}: {type(exc).__name__}: {exc}")
-    print(f"\n{len(tests) - len(failures)}/{len(tests)} passed")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    sys.exit(_run_all())
-```
-
-- [x] **Step 2: Run the tests — expect failure (validate_skills still has the old API)**
-
-Run (PowerShell):
-```powershell
-python scripts\test_validate_skills.py
-```
-Expected: failures/errors — the old module has no `runner=` parameter and still imports `yaml`. This confirms the tests drive the rewrite.
-
-### Task 3.3: Rewrite the validator module
-
-**Files:** Overwrite `scripts/validate_skills.py`
-
-- [x] **Step 1: Replace the entire module with this content**
-
-```python
-#!/usr/bin/env python3
-"""Validate every skill's SKILL.md using the official Agent Skills validator.
-
-Each top-level submodule in this repo is a skill with a SKILL.md at its root
-(root layout). Per-skill validation is delegated to `agentskills validate`
-(the console script from the pinned `skills-ref` PyPI package), which strict-
-parses the YAML frontmatter and enforces the spec's naming/field rules.
-
-This module keeps only the *fleet* logic the per-skill validator can't know:
-
-  - the set of skills comes from `.gitmodules`, not from disk, so a broken
-    recursive checkout can't pass vacuously;
-  - empty/missing dir        -> ERROR (broken checkout);
-  - content but no SKILL.md  -> SKIPPED (a WIP submodule, not a skill yet);
-  - has a SKILL.md           -> handed to `agentskills validate`.
-
-Exit codes: 0 = all valid, 1 = validation errors, 2 = nothing validated.
-
-Run from anywhere:  python scripts/validate_skills.py
-"""
-import re
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-_PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
-
-
-def parse_submodule_paths(gitmodules_text):
-    """Return the ordered list of submodule paths declared in a .gitmodules file."""
-    return _PATH_LINE.findall(gitmodules_text)
-
-
-def find_skill_md(skill_dir: Path):
-    """Return the root SKILL.md for a skill dir, or None if absent."""
-    candidate = skill_dir / "SKILL.md"
-    return candidate if candidate.is_file() else None
-
-
-def has_content(skill_dir: Path):
-    """True if the dir holds any file other than .git (i.e. it checked out)."""
-    if not skill_dir.is_dir():
-        return False
-    return any(entry.name != ".git" for entry in skill_dir.iterdir())
-
-
-def run_agentskills(skill_dir: Path):
-    """Validate one skill dir with `agentskills validate`. Returns (exit_code, output).
-
-    Raises RuntimeError if the `agentskills` console script isn't on PATH — a
-    missing validator must fail loudly, never silently pass.
-    """
-    executable = shutil.which("agentskills")
-    if executable is None:
-        raise RuntimeError(
-            "the 'agentskills' command was not found on PATH; "
-            "install it with `pip install skills-ref==0.1.1`"
-        )
-    completed = subprocess.run(
-        [executable, "validate", str(skill_dir)],
-        capture_output=True,
-        text=True,
-    )
-    return (completed.returncode, (completed.stdout + completed.stderr).strip())
-
-
-def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
-    """Validate one skill. Returns a list of error strings ([] if clean or skipped).
-
-    `runner(skill_dir) -> (exit_code, output)` is injected so the fleet logic is
-    unit-testable without the real validator installed.
-    """
-    skill_dir = repo_root / path
-    if find_skill_md(skill_dir) is None:
-        if has_content(skill_dir):
-            return []  # WIP submodule, not an authored skill yet — skip, not an error
-        return [f"{path}: empty submodule dir, no SKILL.md — checkout looks broken"]
-
-    code, output = runner(skill_dir)
-    if code == 0:
-        return []
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
-    if lines:
-        return [f"{path}: {line}" for line in lines]
-    return [f"{path}: skills-ref reported invalid (exit {code})"]
-
-
-def validate_repo(repo_root: Path, runner=run_agentskills):
-    """Validate every skill declared in .gitmodules.
-
-    Returns (errors, validated_count, skipped) where validated_count is the
-    number of submodules that had a SKILL.md, and skipped lists WIP submodules.
-    """
-    gitmodules = repo_root / ".gitmodules"
-    if not gitmodules.is_file():
-        return ([f"{repo_root}: no .gitmodules file found"], 0, [])
-
-    paths = parse_submodule_paths(gitmodules.read_text(encoding="utf-8"))
-    errors = []
-    validated = 0
-    skipped = []
-    for path in paths:
-        skill_errors = validate_skill(repo_root, path, runner=runner)
-        if find_skill_md(repo_root / path) is not None:
-            validated += 1
-        elif not skill_errors:
-            skipped.append(path)
-        errors.extend(skill_errors)
-    return (errors, validated, skipped)
-
-
-def evaluate(repo_root: Path, runner=run_agentskills):
-    """Run validation and return (exit_code, output_lines)."""
-    errors, validated, skipped = validate_repo(repo_root, runner=runner)
-    notices = [f"note: skipped {name} (submodule has no SKILL.md yet)" for name in skipped]
-    if errors:
-        return (1, [f"skill validation failed ({len(errors)} issue(s)):",
-                    *(f"  - {error}" for error in errors), *notices])
-    if validated == 0:
-        return (2, ["no skills with a SKILL.md were validated — refusing to pass "
-                    "vacuously (is the checkout broken?)", *notices])
-    return (0, [f"OK: all {validated} skills valid (agentskills)", *notices])
-
-
-def main():
-    repo_root = Path(__file__).resolve().parent.parent
-    code, lines = evaluate(repo_root)
-    print("\n".join(lines))
-    sys.exit(code)
-
-
-if __name__ == "__main__":
-    main()
-```
-
-- [x] **Step 2: Run the tests with agentskills on PATH — expect all pass**
-
-Run (PowerShell):
-```powershell
-$env:PATH = "$PWD\.claude\spikes\skills-ref-verify\Scripts;$env:PATH"
-python scripts\test_validate_skills.py
-```
-Expected: `PASS` for every test (including the two integration tests — `agentskills` is on PATH), ending `N/N passed`.
-
-- [x] **Step 3: Run the validator against the real repo — expect all skills valid**
-
-Run (PowerShell, with agentskills on PATH from Step 2):
-```powershell
-python scripts\validate_skills.py
-```
-Expected: `OK: all 16 skills valid (agentskills)` plus a `note: skipped ...` for any WIP submodule (e.g. `review-in-parallel-pipelines`, which has no SKILL.md). Exit 0.
-
-- [x] **Step 4: Commit the validator swap**
-
-Run (Bash tool):
-```bash
-git add scripts/validate_skills.py scripts/test_validate_skills.py
-git commit -m "refactor: delegate skill validation to agentskills (skills-ref)
-
-Replace the hand-rolled frontmatter parser with a thin fleet wrapper
-around 'agentskills validate'. Keep the .gitmodules iteration, the
-anti-vacuous guard, the WIP-skip and empty-dir checks; drop the YAML
-parsing and field checks (now the validator's job). Runner seam keeps
-fleet logic unit-testable offline; integration tests exercise the real
-binary when present.
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
-
----
-
 ## Phase 4: CI wiring + content linting + end-to-end verification
 
 ### Task 4.1: Point the CI validation job at agentskills
 
 **Files:** Modify `.gitea/workflows/lint.yml`
 
-- [ ] **Step 1: Rewrite the `frontmatter` job as `validate-skills`**
+- [x] **Step 1: Rewrite the `frontmatter` job as `validate-skills`**
 
 Replace the `frontmatter:` job (currently lines 20–36) with:
 ```yaml
@@ -429,7 +41,7 @@ Replace the `frontmatter:` job (currently lines 20–36) with:
         run: python scripts/validate_skills.py
 ```
 
-- [ ] **Step 2: Make the markdown job lint skill content too**
+- [x] **Step 2: Make the markdown job lint skill content too**
 
 In the `markdown:` job, change:
 ```yaml
@@ -448,7 +60,7 @@ to:
 
 **Files:** Modify `.markdownlint-cli2.jsonc` (repo root)
 
-- [ ] **Step 1: Broaden `globs`**
+- [x] **Step 1: Broaden `globs`**
 
 Change:
 ```jsonc
@@ -462,7 +74,7 @@ to:
 
 ### Task 4.3: Verify content lint locally and fix any surfaced violations
 
-- [ ] **Step 1: Run markdownlint with the new globs from the repo root**
+- [x] **Step 1: Run markdownlint with the new globs from the repo root**
 
 Run (PowerShell):
 ```powershell
@@ -470,7 +82,7 @@ npx --yes markdownlint-cli2
 ```
 Expected: it now lints skill `SKILL.md` + `references/` files. **If violations appear**, they are real (this content was never linted by the umbrella before). Fix each in its **submodule** repo (edit the file, then in that submodule: commit + `git push origin main` + `git push github main`), then bump that pointer in skills-dev (`git add <skill>`). If zero violations, the per-skill repos were already clean — proceed.
 
-- [ ] **Step 2: Re-run until clean**
+- [x] **Step 2: Re-run until clean**
 
 Run (PowerShell):
 ```powershell
@@ -480,7 +92,7 @@ Expected: exit 0, no violations.
 
 ### Task 4.4: Commit the CI + config changes
 
-- [ ] **Step 1: Commit**
+- [x] **Step 1: Commit**
 
 Run (Bash tool):
 ```bash
