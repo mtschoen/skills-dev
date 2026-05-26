@@ -61,7 +61,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: umbrella submodule pointers for `cost-estimator`, `progress-beacon`
 
-- [ ] **Step 1: Dry-run the real fleet on both installers and eyeball removals**
+- [x] **Step 1: Dry-run the real fleet on both installers and eyeball removals**
 
 Run:
 ```bash
@@ -75,7 +75,7 @@ cmd.exe /c install-skills.bat -n --claude
 ```
 Expected: the same cruft appears as `*EXTRA` (robocopy's removal marker) for `cost-estimator`.
 
-- [ ] **Step 2: Apply the real install and confirm the cruft is gone**
+- [x] **Step 2: Apply the real install and confirm the cruft is gone**
 
 Run:
 ```bash
@@ -91,7 +91,7 @@ ls ~/.claude/skills/progress-beacon/hooks
 ```
 Expected: `hooks/` present with `prompt-reminder.sh` and `recency-nudge.sh`.
 
-- [ ] **Step 3: Stage the submodule-pointer bumps in the umbrella**
+- [x] **Step 3: Stage the submodule-pointer bumps in the umbrella**
 
 The Phase 1–2 submodule commits moved the recorded HEADs. Stage the pointers:
 ```bash
@@ -99,7 +99,7 @@ git add cost-estimator progress-beacon
 git status --short    # expect: M cost-estimator, M progress-beacon
 ```
 
-- [ ] **Step 4: Commit the umbrella submodule-pointer bumps**
+- [x] **Step 4: Commit the umbrella submodule-pointer bumps**
 
 ```bash
 git commit -m "chore: bump cost-estimator + progress-beacon (scripts/ restructure, .skillpack)
