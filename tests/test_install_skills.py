@@ -1,40 +1,58 @@
-"""Tests for install-skills.sh — argument parsing, help, error handling, and dry-run."""
+"""Tests for install-skills.sh.
 
-import pytest
+Covers argument parsing, --help, dry-run, allowlist staging (git-tracked
+top-level allowlist + .skillpack), and the existing-only default destination
+behavior (default mode installs only to harness dirs that already exist;
+explicit flags force-create).
 
-from .conftest import run_install_script
+Mock skills are created with conftest.make_skill, which initializes a real git
+repo and stages the files — the installer enumerates shippable content via
+`git ls-files`, so a bare `.git` marker would stage nothing.
+"""
+
+from .conftest import run_install_script, make_skill
 
 
-class TestInstallSkillsHelpAndUsage:
-    """Test --help and -h flag behavior."""
+def home_with(tmp_path, *harness_dirs):
+    """env_override pointing HOME at tmp_path, with the named parent harness
+    dirs (e.g. ".claude") pre-created so default mode treats them as present."""
+    for harness in harness_dirs:
+        (tmp_path / harness).mkdir(parents=True, exist_ok=True)
+    return {"HOME": str(tmp_path)}
 
-    def test_help_flag_shows_usage_and_exits_zero(self, tmp_repo):
+
+class TestHelpAndUsage:
+    def test_help_long_flag_shows_usage_and_exits_zero(self, tmp_repo):
         result = run_install_script(tmp_repo, "--help")
         assert result.returncode == 0
         assert "Usage:" in result.stdout
         assert "install-skills.sh" in result.stdout
         assert "-y / --yes" in result.stdout
         assert "-n / --dry-run" in result.stdout
-        assert "--claude" in result.stdout
-        assert "--pi" in result.stdout
-        assert "--all" in result.stdout
 
     def test_short_help_flag_shows_usage_and_exits_zero(self, tmp_repo):
         result = run_install_script(tmp_repo, "-h")
         assert result.returncode == 0
         assert "Usage:" in result.stdout
 
-    def test_help_output_contains_all_flags(self, tmp_repo):
+    def test_help_lists_all_destination_flags(self, tmp_repo):
         result = run_install_script(tmp_repo, "--help")
-        for flag in ["-y", "--yes", "-n", "--dry-run", "--claude", "--pi",
-                     "--hermes", "--gemini", "--codex", "--all"]:
+        for flag in ["--agents", "--claude", "--gemini", "--all"]:
             assert flag in result.stdout, f"Flag '{flag}' not in help output"
 
+    def test_help_first_line(self, tmp_repo):
+        result = run_install_script(tmp_repo, "-h")
+        assert result.returncode == 0
+        first = result.stdout.strip().split("\n")[0]
+        assert first == "Install skills from this repo into one or more agent config dirs."
 
-class TestInstallSkillsArgumentErrors:
-    """Test unknown argument handling and exit codes."""
+    def test_help_documents_existing_only_default(self, tmp_repo):
+        result = run_install_script(tmp_repo, "--help")
+        assert "ALREADY EXIST" in result.stdout
 
-    def test_unknown_flag_exits_two(self, tmp_repo):
+
+class TestArgumentErrors:
+    def test_unknown_long_flag_exits_two(self, tmp_repo):
         result = run_install_script(tmp_repo, "--bogus-flag")
         assert result.returncode == 2
         assert "unknown flag" in result.stderr
@@ -44,402 +62,229 @@ class TestInstallSkillsArgumentErrors:
         assert result.returncode == 2
         assert "unknown flag" in result.stderr
 
-    def test_unknown_flag_prints_to_stderr(self, tmp_repo):
-        result = run_install_script(tmp_repo, "--not-a-real-flag")
-        assert result.returncode == 2
-        assert "--not-a-real-flag" in result.stderr
+    def test_retired_flags_are_rejected(self, tmp_repo):
+        """--pi/--hermes/--codex were retired for the agents-canonical model."""
+        for flag in ("--pi", "--hermes", "--codex"):
+            result = run_install_script(tmp_repo, flag)
+            assert result.returncode == 2, f"{flag} should now be unknown"
+            assert "unknown flag" in result.stderr
 
 
-class TestInstallSkillsDryRun:
-    """Test dry-run mode (-n / --dry-run)."""
-
-    def test_dry_run_short_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        # Create a mock submodule with .git marker
-        skill_dir = tmp_repo / "dry-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Dry Skill\n")
-
-        # Run with dry-run; set HOME to avoid real destination
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-n", "dry-skill", env_override=env_override)
+class TestDryRun:
+    def test_dry_run_short_flag_does_not_create_dest(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "dry-skill")
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-n", "dry-skill", env_override=env)
         assert result.returncode == 0
-        # Dry-run should show install message but not create the directory
-        assert dest.joinpath("dry-skill").exists() is False
+        assert "install dry-skill" in result.stdout
+        assert not (tmp_path / ".claude" / "skills" / "dry-skill").exists()
 
-    def test_dry_run_long_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "dry-long"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Dry Long\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "--dry-run", "dry-long", env_override=env_override)
+    def test_dry_run_long_flag_does_not_create_dest(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "dry-long")
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "--dry-run", "dry-long", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("dry-long").exists() is False
+        assert not (tmp_path / ".claude" / "skills" / "dry-long").exists()
 
-    def test_dry_run_with_assume_yes(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "dry-both"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Dry Both\n")
 
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "-n", "dry-both", env_override=env_override)
+class TestInstallContent:
+    def test_yes_installs_skill_md(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "yes-skill")
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", "yes-skill", env_override=env)
         assert result.returncode == 0
+        assert (tmp_path / ".claude" / "skills" / "yes-skill" / "SKILL.md").exists()
 
-
-class TestInstallSkillsAssumeYes:
-    """Test -y / --yes flag (no tty interaction needed)."""
-
-    def test_yes_flag_short(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "yes-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Yes Skill\n")
-        skill_dir.joinpath("content.txt").write_text("hello\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "yes-skill", env_override=env_override)
+    def test_allowlisted_subdir_content_copies(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "withref", files={
+            "SKILL.md": "# withref\n",
+            "references/note.txt": "hello\n",
+        })
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", "withref", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("yes-skill", "SKILL.md").exists()
-        assert dest.joinpath("yes-skill", "content.txt").read_text() == "hello\n"
+        dest = tmp_path / ".claude" / "skills" / "withref"
+        assert (dest / "SKILL.md").exists()
+        assert (dest / "references" / "note.txt").read_text() == "hello\n"
 
-    def test_yes_flag_long(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "yes-long"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Yes Long\n")
 
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "--yes", "yes-long", env_override=env_override)
+class TestDestinationFlags:
+    """Explicit flags target a single harness and force-create it even when
+    the harness dir does not already exist (HOME here has no harness dirs)."""
+
+    def test_agents_flag(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "agents-skill")
+        result = run_install_script(tmp_repo, "--agents", "-y", "agents-skill",
+                                    env_override={"HOME": str(tmp_path)})
         assert result.returncode == 0
-        assert dest.joinpath("yes-long", "SKILL.md").exists()
-
-
-class TestInstallSkillsDestinationFlags:
-    """Test destination selection flags."""
+        assert (tmp_path / ".agents" / "skills" / "agents-skill" / "SKILL.md").exists()
 
     def test_claude_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "claude-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Claude Skill\n")
-
-        env_override = {"HOME": str(tmp_path)}
+        make_skill(tmp_repo, "claude-skill")
         result = run_install_script(tmp_repo, "--claude", "-y", "claude-skill",
-                                     env_override=env_override)
+                                    env_override={"HOME": str(tmp_path)})
         assert result.returncode == 0
-        assert dest.joinpath("claude-skill", "SKILL.md").exists()
-
-    def test_pi_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".pi" / "agent" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "pi-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Pi Skill\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "--pi", "-y", "pi-skill",
-                                     env_override=env_override)
-        assert result.returncode == 0
-        assert dest.joinpath("pi-skill", "SKILL.md").exists()
-
-    def test_hermes_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".hermes" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "hermes-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Hermes Skill\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "--hermes", "-y", "hermes-skill",
-                                     env_override=env_override)
-        assert result.returncode == 0
-        assert dest.joinpath("hermes-skill", "SKILL.md").exists()
+        assert (tmp_path / ".claude" / "skills" / "claude-skill" / "SKILL.md").exists()
 
     def test_gemini_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".gemini" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "gemini-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Gemini Skill\n")
-
-        env_override = {"HOME": str(tmp_path)}
+        make_skill(tmp_repo, "gemini-skill")
         result = run_install_script(tmp_repo, "--gemini", "-y", "gemini-skill",
-                                     env_override=env_override)
+                                    env_override={"HOME": str(tmp_path)})
         assert result.returncode == 0
-        assert dest.joinpath("gemini-skill", "SKILL.md").exists()
+        assert (tmp_path / ".gemini" / "skills" / "gemini-skill" / "SKILL.md").exists()
 
-    def test_codex_flag(self, tmp_repo, tmp_path):
-        dest = tmp_path / ".codex" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "codex-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Codex Skill\n")
 
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "--codex", "-y", "codex-skill",
-                                     env_override=env_override)
+class TestExistingOnlyDefault:
+    """Default mode (no agent flag) installs only to harness dirs that already
+    exist; absent harnesses are skipped, not created."""
+
+    def test_installs_to_each_existing_harness(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "deux")
+        env = home_with(tmp_path, ".claude", ".gemini")  # .agents absent
+        result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("codex-skill", "SKILL.md").exists()
+        assert (tmp_path / ".claude" / "skills" / "deux" / "SKILL.md").exists()
+        assert (tmp_path / ".gemini" / "skills" / "deux" / "SKILL.md").exists()
+        assert not (tmp_path / ".agents").exists()
+        assert "skip agents" in result.stdout
 
-
-class TestInstallSkillsDefaultBehavior:
-    """Test default installation behavior (no flags, all skills)."""
-
-    def test_default_destination_is_claude(self, tmp_repo, tmp_path):
-        """Without any --agent flag, default destination is ~/.claude/skills."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "default-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Default Skill\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", env_override=env_override)
+    def test_skips_absent_harness(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "solo")
+        env = home_with(tmp_path, ".claude")  # only claude present
+        result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("default-skill", "SKILL.md").exists()
+        assert (tmp_path / ".claude" / "skills" / "solo" / "SKILL.md").exists()
+        assert not (tmp_path / ".gemini").exists()
+        assert not (tmp_path / ".agents").exists()
 
+    def test_no_existing_harness_exits_zero_with_message(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "lonely")
+        env = {"HOME": str(tmp_path)}  # no harness dirs at all
+        result = run_install_script(tmp_repo, "-y", env_override=env)
+        assert result.returncode == 0
+        assert "No existing skill destinations" in result.stdout
+        for harness in (".agents", ".claude", ".gemini"):
+            assert not (tmp_path / harness).exists()
+
+    def test_explicit_flag_creates_absent_harness(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "forced")
+        env = {"HOME": str(tmp_path)}  # .gemini absent
+        result = run_install_script(tmp_repo, "--gemini", "-y", "forced",
+                                    env_override=env)
+        assert result.returncode == 0
+        assert (tmp_path / ".gemini" / "skills" / "forced" / "SKILL.md").exists()
+
+    def test_all_flag_force_creates_every_harness(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "everywhere")
+        env = {"HOME": str(tmp_path)}  # nothing exists
+        result = run_install_script(tmp_repo, "--all", "-y", "everywhere",
+                                    env_override=env)
+        assert result.returncode == 0
+        for harness in (".agents", ".claude", ".gemini"):
+            assert (tmp_path / harness / "skills" / "everywhere" / "SKILL.md").exists()
+
+
+class TestDefaultSelection:
     def test_default_installs_all_skills(self, tmp_repo, tmp_path):
-        """Without positional args, all skills are installed."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
         for name in ("alpha", "beta", "gamma"):
-            skill_dir = tmp_repo / name
-            skill_dir.mkdir()
-            skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-            skill_dir.joinpath("SKILL.md").write_text(f"# {name}\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", env_override=env_override)
+            make_skill(tmp_repo, name)
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("alpha", "SKILL.md").exists()
-        assert dest.joinpath("beta", "SKILL.md").exists()
-        assert dest.joinpath("gamma", "SKILL.md").exists()
+        skills = tmp_path / ".claude" / "skills"
+        for name in ("alpha", "beta", "gamma"):
+            assert (skills / name / "SKILL.md").exists()
 
-    def test_default_skips_non_submodules(self, tmp_repo, tmp_path):
-        """Directories without .git are skipped (not submodules)."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
-        # Create a submodule (has .git)
-        skill_dir = tmp_repo / "real-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Real\n")
-
-        # Create a non-submodule dir (no .git)
+    def test_skips_non_submodule_dirs(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "real-skill")
+        # A plain directory without a .git marker is not a submodule.
         non_skill = tmp_repo / "not-a-submodule"
         non_skill.mkdir()
-        non_skill.joinpath("SKILL.md").write_text("# Not a submodule\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", env_override=env_override)
+        (non_skill / "SKILL.md").write_text("# not a submodule\n")
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
-        # Real skill should be installed
-        assert dest.joinpath("real-skill", "SKILL.md").exists()
-        # Non-submodule should NOT be installed
-        assert not dest.joinpath("not-a-submodule").exists()
+        skills = tmp_path / ".claude" / "skills"
+        assert (skills / "real-skill" / "SKILL.md").exists()
+        assert not (skills / "not-a-submodule").exists()
 
-    def test_default_skips_no_content_skills(self, tmp_repo, tmp_path):
-        """Skills with neither SKILL.md nor skill-draft/ are skipped."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
-        skill_dir = tmp_repo / "no-content"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("README.md").write_text("Just a readme, no SKILL.md.\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", env_override=env_override)
+    def test_skips_skill_without_skill_md(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "no-content", files={"README.md": "just a readme\n"})
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
-        assert not dest.joinpath("no-content").exists()
+        assert not (tmp_path / ".claude" / "skills" / "no-content").exists()
 
 
-class TestInstallSkillsSelective:
-    """Test positional skill name arguments."""
+class TestAllowlistStaging:
+    def test_non_allowlisted_toplevel_is_excluded(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "trim", files={
+            "SKILL.md": "# trim\n",
+            "scripts/run.sh": "echo hi\n",     # allowlisted
+            "README.md": "readme\n",           # not allowlisted
+            ".gitignore": "*.tmp\n",           # not allowlisted
+            "evals/case.md": "eval\n",         # not allowlisted
+        })
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", "trim", env_override=env)
+        assert result.returncode == 0
+        dest = tmp_path / ".claude" / "skills" / "trim"
+        assert (dest / "SKILL.md").exists()
+        assert (dest / "scripts" / "run.sh").exists()
+        assert not (dest / "README.md").exists()
+        assert not (dest / ".gitignore").exists()
+        assert not (dest / "evals").exists()
+        assert not (dest / ".git").exists()
 
+    def test_skillpack_extends_allowlist(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "packed", files={
+            "SKILL.md": "# packed\n",
+            "hooks/hook.sh": "echo hook\n",    # shipped via .skillpack
+            "extras/data.txt": "x\n",          # not declared -> excluded
+            ".skillpack": "hooks\n",
+        })
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", "packed", env_override=env)
+        assert result.returncode == 0
+        dest = tmp_path / ".claude" / "skills" / "packed"
+        assert (dest / "hooks" / "hook.sh").exists()
+        assert not (dest / "extras").exists()
+        assert not (dest / ".skillpack").exists()  # manifest itself never ships
+
+
+class TestSelective:
     def test_single_skill_selection(self, tmp_repo, tmp_path):
-        """Only specified skill is installed."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
         for name in ("alpha", "beta", "gamma"):
-            skill_dir = tmp_repo / name
-            skill_dir.mkdir()
-            skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-            skill_dir.joinpath("SKILL.md").write_text(f"# {name}\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "beta", env_override=env_override)
+            make_skill(tmp_repo, name)
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", "beta", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("beta", "SKILL.md").exists()
-        assert not dest.joinpath("alpha").exists()
-        assert not dest.joinpath("gamma").exists()
+        skills = tmp_path / ".claude" / "skills"
+        assert (skills / "beta" / "SKILL.md").exists()
+        assert not (skills / "alpha").exists()
+        assert not (skills / "gamma").exists()
 
     def test_multiple_skill_selection(self, tmp_repo, tmp_path):
-        """Multiple specified skills are installed."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
         for name in ("alpha", "beta", "gamma"):
-            skill_dir = tmp_repo / name
-            skill_dir.mkdir()
-            skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-            skill_dir.joinpath("SKILL.md").write_text(f"# {name}\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "alpha", "gamma",
-                                     env_override=env_override)
+            make_skill(tmp_repo, name)
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", "alpha", "gamma", env_override=env)
         assert result.returncode == 0
-        assert dest.joinpath("alpha", "SKILL.md").exists()
-        assert not dest.joinpath("beta").exists()
-        assert dest.joinpath("gamma", "SKILL.md").exists()
+        skills = tmp_path / ".claude" / "skills"
+        assert (skills / "alpha" / "SKILL.md").exists()
+        assert not (skills / "beta").exists()
+        assert (skills / "gamma" / "SKILL.md").exists()
 
 
-class TestInstallSkillsDraftLayout:
-    """Test legacy skill-draft/ layout."""
-
-    def test_draft_layout_installs_from_skill_draft(self, tmp_repo, tmp_path):
-        """Skills with skill-draft/ copy content from that subdirectory."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
-        skill_dir = tmp_repo / "draft-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        draft_dir = skill_dir / "skill-draft"
-        draft_dir.mkdir()
-        draft_dir.joinpath("SKILL.md").write_text("# Draft Skill\n")
-        draft_dir.joinpath("extra.txt").write_text("from draft\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "draft-skill",
-                                     env_override=env_override)
-        assert result.returncode == 0
-        assert dest.joinpath("draft-skill", "SKILL.md").exists()
-        assert dest.joinpath("draft-skill", "extra.txt").exists()
-
-    def test_draft_layout_skips_root_excludes(self, tmp_repo, tmp_path):
-        """Draft layout does NOT apply ROOT_EXCLUDES (evals, docs, etc.)."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
-        skill_dir = tmp_repo / "draft-excl"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        draft_dir = skill_dir / "skill-draft"
-        draft_dir.mkdir()
-        draft_dir.joinpath("SKILL.md").write_text("# Draft\n")
-        # These would be excluded for root layout but NOT for draft
-        draft_dir.joinpath("evals").mkdir()
-        draft_dir.joinpath("evals", "test.md").write_text("eval\n")
-        draft_dir.joinpath("docs").mkdir()
-        draft_dir.joinpath("docs", "readme.md").write_text("doc\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "draft-excl",
-                                     env_override=env_override)
-        assert result.returncode == 0
-        assert dest.joinpath("draft-excl", "evals", "test.md").exists()
-        assert dest.joinpath("draft-excl", "docs", "readme.md").exists()
-
-
-class TestInstallSkillsRootLayoutExclusion:
-    """Test file exclusion for root-layout skills."""
-
-    def test_root_layout_excludes_git(self, tmp_repo, tmp_path):
-        """ROOT_EXCLUDES should exclude .git, .gitignore, etc."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-
-        skill_dir = tmp_repo / "root-excl"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Root\n")
-        skill_dir.joinpath(".gitignore").write_text("*.tmp\n")
-        skill_dir.joinpath("README.md").write_text("Readme\n")
-        skill_dir.joinpath("evals").mkdir()
-        skill_dir.joinpath("evals", "test.md").write_text("eval\n")
-        # Note: Do NOT create skill-draft/ here — the install script checks for it
-        # first and would use draft layout, bypassing the root exclusion logic.
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-y", "root-excl",
-                                     env_override=env_override)
-        assert result.returncode == 0
-        installed = dest.joinpath("root-excl")
-        assert installed.exists()
-        # Should NOT have excluded dirs/files
-        assert not installed.joinpath(".git").exists()
-        assert not installed.joinpath(".gitignore").exists()
-        assert not installed.joinpath("README.md").exists()
-        assert not installed.joinpath("evals").exists()
-        # Should have the main content
-        assert installed.joinpath("SKILL.md").exists()
-
-
-class TestInstallSkillsOutputMessages:
-    """Test stdout messages from the install script."""
-
+class TestOutputMessages:
     def test_dry_run_shows_install_message(self, tmp_repo, tmp_path):
-        """Dry-run should print 'install name -> dest' message."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "msg-skill"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Msg\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        result = run_install_script(tmp_repo, "-n", "msg-skill",
-                                     env_override=env_override)
+        make_skill(tmp_repo, "msg-skill")
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-n", "msg-skill", env_override=env)
         assert result.returncode == 0
         assert "install msg-skill" in result.stdout
 
-    def test_dry_run_shows_not_installed(self, tmp_repo, tmp_path):
-        """Dry-run should not create destination directory."""
-        dest = tmp_path / ".claude" / "skills"
-        dest.mkdir(parents=True)
-        skill_dir = tmp_repo / "not-installed"
-        skill_dir.mkdir()
-        skill_dir.joinpath(".git").write_text("gitdir: .git\n")
-        skill_dir.joinpath("SKILL.md").write_text("# Not Installed\n")
-
-        env_override = {"HOME": str(tmp_path)}
-        run_install_script(tmp_repo, "-n", "not-installed",
-                           env_override=env_override)
-        assert not dest.joinpath("not-installed").exists()
-
     def test_unknown_flag_message(self, tmp_repo):
-        """Unknown flags should produce an error message on stderr."""
         result = run_install_script(tmp_repo, "--fake")
         assert result.returncode == 2
         assert "unknown flag" in result.stderr
-
-    def test_help_output_format(self, tmp_repo):
-        """Help output should start with 'Install skills from this repo'."""
-        result = run_install_script(tmp_repo, "-h")
-        assert result.returncode == 0
-        lines = result.stdout.strip().split("\n")
-        assert lines[0] == "Install skills from this repo into one or more agent config dirs."
