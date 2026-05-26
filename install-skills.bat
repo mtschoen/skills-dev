@@ -20,6 +20,11 @@ rem   --gemini         install to %%USERPROFILE%%\.gemini\skills
 rem   --all            install to all known agent skill dirs
 rem   positional args  limit to specific skill names (default: all)
 rem
+rem With no agent flag, installs only to harness dirs that ALREADY EXIST on this
+rem machine (%USERPROFILE%\.agents, \.claude, \.gemini). A destination whose
+rem parent dir is absent is skipped, so harnesses you don't use get no phantom
+rem dir. Pass explicit --agents/--claude/--gemini/--all to create a missing one.
+rem
 rem Test seam: set SKILLS_SRC_ROOT to override the source dir scanned.
 
 set "SRC_ROOT=%~dp0"
@@ -28,6 +33,7 @@ if defined SKILLS_SRC_ROOT set "SRC_ROOT=%SKILLS_SRC_ROOT%"
 
 set "ASSUME_YES=0"
 set "DRY_RUN=0"
+set "DEFAULT_MODE=0"
 set "SELECTED="
 set "DEST_COUNT=0"
 
@@ -53,7 +59,15 @@ shift
 goto parse_args
 
 :parse_done
-if "%DEST_COUNT%"=="0" call :add_all_dests
+if "%DEST_COUNT%"=="0" (
+    set "DEFAULT_MODE=1"
+    call :add_all_dests
+)
+if "!DEFAULT_MODE!"=="1" if "!DEST_COUNT!"=="0" (
+    echo No existing skill destinations on this machine. Pass --agents/--claude/--gemini or --all to bootstrap one.
+    endlocal
+    exit /b 0
+)
 
 set "BASELINE= SKILL.md scripts references assets "
 
@@ -76,9 +90,30 @@ set "DEST_%DEST_COUNT%_PATH=%~2"
 exit /b 0
 
 :add_all_dests
-call :add_dest agents "%USERPROFILE%\.agents\skills"
-call :add_dest claude "%USERPROFILE%\.claude\skills"
-call :add_dest gemini "%USERPROFILE%\.gemini\skills"
+call :maybe_add_one agents "%USERPROFILE%\.agents\skills"
+call :maybe_add_one claude "%USERPROFILE%\.claude\skills"
+call :maybe_add_one gemini "%USERPROFILE%\.gemini\skills"
+exit /b 0
+
+:maybe_add_one
+rem In default mode (no explicit flag), skip a destination whose parent harness
+rem dir (e.g. %USERPROFILE%\.gemini) is absent, so unused harnesses get no
+rem phantom skills dir. Explicit flags reach :add_dest directly and create.
+if "!DEFAULT_MODE!"=="1" (
+    call :parent_dir "%~2" _PARENT
+    if not exist "!_PARENT!\" (
+        echo skip %~1 ^(harness dir !_PARENT! not present; pass --%~1 or --all to create^)
+        exit /b 0
+    )
+)
+call :add_dest %~1 "%~2"
+exit /b 0
+
+:parent_dir
+rem %~1 = full path; sets the variable named by %~2 to its parent dir (no trailing slash)
+for %%P in ("%~1") do set "_pd=%%~dpP"
+if "!_pd:~-1!"=="\" set "_pd=!_pd:~0,-1!"
+set "%~2=!_pd!"
 exit /b 0
 
 :maybe_install

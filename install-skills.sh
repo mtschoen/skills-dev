@@ -18,9 +18,12 @@
 #   --all            install to all known agent skill dirs
 #   positional args  limit to specific skill names (default: all)
 #
-# With no agent flag, installs to ~/.agents/skills plus the two harnesses that
-# can't read it directly: ~/.claude/skills (Claude) and ~/.gemini/skills
-# (Antigravity). Codex reads ~/.agents/skills natively, so it needs no copy.
+# With no agent flag, installs only to harness dirs that ALREADY EXIST on this
+# machine, among ~/.agents/skills (canonical), ~/.claude/skills (Claude), and
+# ~/.gemini/skills (Antigravity). A destination whose parent harness dir (e.g.
+# ~/.gemini) is absent is skipped, so harnesses you don't use get no phantom
+# dir. Pass an explicit --agents/--claude/--gemini/--all to create a missing
+# one. Codex reads ~/.agents/skills natively, so it needs no copy.
 #
 # Test seam: set SKILLS_SRC_ROOT to override the source dir scanned for skills.
 
@@ -30,6 +33,7 @@ SRC_ROOT="${SKILLS_SRC_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"}"
 
 ASSUME_YES=0
 DRY_RUN=0
+DEFAULT_MODE=0
 SELECTED=()
 DESTINATIONS=()
 
@@ -47,9 +51,23 @@ add_destination() {
 }
 
 add_all_destinations() {
-    add_destination agents "${HOME}/.agents/skills"
-    add_destination claude "${HOME}/.claude/skills"
-    add_destination gemini "${HOME}/.gemini/skills"
+    maybe_add_destination agents "${HOME}/.agents/skills"
+    maybe_add_destination claude "${HOME}/.claude/skills"
+    maybe_add_destination gemini "${HOME}/.gemini/skills"
+}
+
+# Add a destination, but in default mode (no explicit agent flag) skip it when
+# its parent harness dir (e.g. ~/.gemini) is absent, so harnesses you don't use
+# get no phantom skills dir. Explicit flags bypass this by calling
+# add_destination directly, so they always create.
+maybe_add_destination() {
+    local name="$1" path="$2" harness
+    harness="$(dirname "$path")"
+    if [ "$DEFAULT_MODE" = 1 ] && [ ! -d "$harness" ]; then
+        echo "skip $name (harness dir $harness not present; pass --$name or --all to create)"
+        return 0
+    fi
+    add_destination "$name" "$path"
 }
 
 while [ $# -gt 0 ]; do
@@ -61,7 +79,7 @@ while [ $# -gt 0 ]; do
         --gemini) add_destination gemini "${HOME}/.gemini/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         -h|--help)
-            sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -69,7 +87,13 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
+    DEFAULT_MODE=1
     add_all_destinations
+fi
+
+if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
+    echo "No existing skill destinations on this machine. Pass --agents/--claude/--gemini or --all to bootstrap one."
+    exit 0
 fi
 
 has_selection() { [ "${#SELECTED[@]}" -gt 0 ]; }
