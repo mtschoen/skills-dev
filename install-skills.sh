@@ -2,8 +2,12 @@
 # Install skills from this repo into one or more agent config dirs.
 #
 # Each top-level dir here is a skill submodule with a SKILL.md at its root.
-# The installable content is `<skill>/` itself; dev-only files (evals/,
-# tests/, README, LICENSE, etc.) are excluded — see ROOT_EXCLUDES.
+# The installer ships only GIT-TRACKED files (via `git ls-files`), filtered to
+# a top-level allowlist: SKILL.md + scripts/ + references/ + assets/, plus any
+# extra top-level entries listed in the skill's optional `.skillpack` manifest.
+# Shipping tracked files only means generated junk (e.g. __pycache__) can never
+# leak. Each install is a true mirror of a clean staging tree, so files left in
+# the destination by older installs are removed.
 #
 # Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 #   -y / --yes       overwrite without prompting
@@ -17,20 +21,26 @@
 # With no agent flag, installs to ~/.agents/skills plus the two harnesses that
 # can't read it directly: ~/.claude/skills (Claude) and ~/.gemini/skills
 # (Antigravity). Codex reads ~/.agents/skills natively, so it needs no copy.
+#
+# Test seam: set SKILLS_SRC_ROOT to override the source dir scanned for skills.
 
 set -euo pipefail
 
-SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_ROOT="${SKILLS_SRC_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"}"
 
 ASSUME_YES=0
 DRY_RUN=0
 SELECTED=()
 DESTINATIONS=()
 
+# Baseline top-level entries shipped for every skill (Agent Skills convention
+# + the required SKILL.md). Extra entries come from each skill's .skillpack.
+BASELINE_INCLUDES=(SKILL.md scripts references assets)
+
 add_destination() {
     local name="$1" path="$2"
     local existing
-    for existing in "${DESTINATIONS[@]}"; do
+    for existing in "${DESTINATIONS[@]+"${DESTINATIONS[@]}"}"; do
         [ "$existing" = "$name|$path" ] && return 0
     done
     DESTINATIONS+=("$name|$path")
@@ -51,7 +61,7 @@ while [ $# -gt 0 ]; do
         --gemini) add_destination gemini "${HOME}/.gemini/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         -h|--help)
-            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -59,20 +69,8 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
-    add_destination agents "${HOME}/.agents/skills"
-    add_destination claude "${HOME}/.claude/skills"
-    add_destination gemini "${HOME}/.gemini/skills"
+    add_all_destinations
 fi
-
-# Files/dirs excluded when installing a skill — dev-only content that
-# should not ship into the agent skills dir.
-ROOT_EXCLUDES=(
-    .git .gitignore .gitmodules .github .gitea
-    .markdownlint-cli2.jsonc
-    README.md AUDIT.md LICENSE HANDOFF.md
-    docs evals node_modules reports tests workspace smoke-test-workspace
-    capture-screenshot.py regen-screenshots.sh regen-screenshots.bat
-)
 
 has_selection() { [ "${#SELECTED[@]}" -gt 0 ]; }
 is_selected() {
@@ -83,33 +81,41 @@ is_selected() {
     return 1
 }
 
-# diff args for root-layout skills (honors ROOT_EXCLUDES on the source side).
-diff_args_for() {
-    local layout="$1"
-    local args="-rq"
-    if [ "$layout" = "root" ]; then
-        local e
-        for e in "${ROOT_EXCLUDES[@]}"; do
-            args="$args --exclude=$e"
-        done
-    fi
-    echo "$args"
+# Extra top-level includes from <skill>/.skillpack (one per line; # comments;
+# trailing slash and surrounding whitespace ignored). Prints normalized entries.
+manifest_includes() {
+    local manifest="$1/.skillpack"
+    [ -f "$manifest" ] || return 0
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%%#*}"
+        line="${line//[[:space:]]/}"
+        line="${line%/}"
+        [ -n "$line" ] && printf '%s\n' "$line"
+    done < "$manifest"
 }
 
-# Copy content_dir -> dest, replacing dest entirely. Honors excludes for
-# root layout via tar --exclude.
-sync_dir() {
-    local content_dir="$1" dest="$2" layout="$3"
-    rm -rf "$dest"
-    mkdir -p "$dest"
-    local excl_args=()
-    if [ "$layout" = "root" ]; then
-        local e
-        for e in "${ROOT_EXCLUDES[@]}"; do
-            excl_args+=(--exclude="./$e")
+# Build a clean staging tree of shippable files for one skill: only git-tracked
+# paths whose top-level component is in the include set, copied from the working
+# tree (so uncommitted edits install). Untracked junk is never a candidate.
+build_staging() {
+    local src="$1" staging="$2"
+    local -a includes=("${BASELINE_INCLUDES[@]}")
+    local entry
+    while IFS= read -r entry; do includes+=("$entry"); done < <(manifest_includes "$src")
+
+    local f top hit
+    while IFS= read -r f; do
+        top="${f%%/*}"
+        hit=0
+        for entry in "${includes[@]}"; do
+            if [ "$entry" = "$top" ]; then hit=1; break; fi
         done
-    fi
-    tar -C "$content_dir" ${excl_args[@]+"${excl_args[@]}"} -cf - . | tar -C "$dest" -xf -
+        [ "$hit" = 1 ] || continue
+        [ -e "$src/$f" ] || continue        # tracked but deleted in working tree
+        mkdir -p "$staging/$(dirname "$f")"
+        cp -p "$src/$f" "$staging/$f"
+    done < <(git -C "$src" ls-files)
 }
 
 confirm() {
@@ -129,52 +135,55 @@ confirm() {
 
 install_skill_to_destination() {
     local name="$1" agent="$2" dest_root="$3"
-    local src_dir="$SRC_ROOT/$name"
-    local content_dir layout
-    if [ -f "$src_dir/SKILL.md" ]; then
-        content_dir="$src_dir"
-        layout="root"
-    else
+    local src="$SRC_ROOT/$name"
+    if [ ! -f "$src/SKILL.md" ]; then
         echo "skip $name (no SKILL.md)"
         return
     fi
 
     local dest="$dest_root/$name"
+    local staging
+    staging="$(mktemp -d "${TMPDIR:-/tmp}/skillinst.XXXXXX")"
+    build_staging "$src" "$staging"
 
     if [ ! -e "$dest" ]; then
         echo "install $name -> $dest ($agent)"
         if [ "$DRY_RUN" != 1 ]; then
-            mkdir -p "$dest_root"
-            sync_dir "$content_dir" "$dest" "$layout"
+            mkdir -p "$dest"
+            cp -a "$staging/." "$dest/"
         fi
+        rm -rf "$staging"
         return
     fi
 
-    # Existing install — detect changes.
-    # shellcheck disable=SC2046
     local diff_out
-    diff_out=$(diff $(diff_args_for "$layout") "$content_dir" "$dest" 2>&1 || true)
+    diff_out="$(diff -rq "$staging" "$dest" 2>&1 || true)"
     if [ -z "$diff_out" ]; then
         echo "unchanged $name ($agent)"
+        rm -rf "$staging"
         return
     fi
 
     echo
-    echo "update $name -> $dest ($agent, changes below):"
-    echo "$diff_out" | sed 's/^/  /'
+    echo "update $name -> $dest ($agent; 'Only in (shipped)'=add, 'Only in (installed)'=remove):"
+    printf '%s\n' "$diff_out" \
+        | sed -e "s#$staging#(shipped)#g" -e "s#$dest#(installed)#g" -e 's/^/  /'
 
     if [ "$DRY_RUN" = 1 ]; then
         echo "  (dry-run; not applying)"
+        rm -rf "$staging"
         return
     fi
 
     if confirm "overwrite $dest?"; then
-        mkdir -p "$dest_root"
-        sync_dir "$content_dir" "$dest" "$layout"
+        rm -rf "$dest"
+        mkdir -p "$dest"
+        cp -a "$staging/." "$dest/"
         echo "  updated."
     else
         echo "  skipped."
     fi
+    rm -rf "$staging"
 }
 
 install_skill() {
@@ -188,8 +197,7 @@ install_skill() {
 
 for src in "$SRC_ROOT"/*/; do
     name="$(basename "$src")"
-    # Only top-level git submodules.
-    [ -e "$src/.git" ] || continue
+    [ -e "$src/.git" ] || continue       # only git submodules / repos
     is_selected "$name" || continue
     install_skill "$name"
 done

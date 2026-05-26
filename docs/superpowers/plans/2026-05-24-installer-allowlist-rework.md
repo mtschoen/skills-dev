@@ -155,7 +155,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify (full rewrite): `install-skills.sh`
 
-- [ ] **Step 1: Replace the entire contents of `install-skills.sh`**
+- [x] **Step 1: Replace the entire contents of `install-skills.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -363,7 +363,7 @@ for src in "$SRC_ROOT"/*/; do
 done
 ```
 
-- [ ] **Step 2: Run the harness — `.sh` assertions must now pass**
+- [x] **Step 2: Run the harness — `.sh` assertions must now pass**
 
 Run:
 ```bash
@@ -371,7 +371,7 @@ bash tests/test-install.sh
 ```
 Expected: every `[.sh]` line prints `PASS`. (The `[.bat]` block still fails until Phase 3 — overall result will be `TESTS FAILED` because of `.bat`. Confirm all `.sh` lines are PASS before continuing.)
 
-- [ ] **Step 3: Commit the bash rewrite**
+- [x] **Step 3: Commit the bash rewrite**
 
 ```bash
 git add install-skills.sh
