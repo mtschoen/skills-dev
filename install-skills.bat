@@ -123,7 +123,7 @@ if not exist "!dest!" (
 )
 
 set "tmpout=%TEMP%\install-skills-!agent!-!n!.txt"
-robocopy "!staging!" "!dest!" /MIR /L /NJH /NJS /NDL /NP /NS /NC /FP > "!tmpout!"
+robocopy "!staging!" "!dest!" /MIR /L /NJH /NJS /NDL /NP /NS /FP > "!tmpout!"
 set "rc=!errorlevel!"
 
 if !rc! geq 8 (
