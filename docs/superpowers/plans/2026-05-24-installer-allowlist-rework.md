@@ -10,162 +10,6 @@
 
 ---
 
-## Phase 1: Submodule prep
-
-These changes live in the `cost-estimator` and `progress-beacon` **submodule** repos. Commit them inside each submodule (as Matt Schoen, per repo convention). The umbrella submodule-pointer bumps happen in Phase 4.
-
-### Task 1: Restructure `cost-estimator/scripts/` to runtime-only
-
-Move dev-only files out of `scripts/` so the top-level allowlist can ship `scripts/` wholesale. Tests load runtime scripts by relative path, so the move requires path fixups + a green pytest run.
-
-**Files (all under `cost-estimator/`):**
-- Move: `scripts/test_buckets.py`, `scripts/test_compare.py`, `scripts/test_resolve_roots.py` → `tests/`
-- Move: `scripts/run-tests.sh`, `scripts/run-tests.bat` → `tests/`
-- Move: `scripts/capture-screenshot.py`, `scripts/regen-screenshots.sh`, `scripts/regen-screenshots.bat` → `dev/`
-- Modify: the three moved test files (path refs)
-- Modify: `dev/regen-screenshots.sh`, `dev/regen-screenshots.bat` (capture-screenshot path)
-
-- [ ] **Step 1: Confirm the submodule is on `main` (not detached)**
-
-Run:
-```bash
-cd cost-estimator
-git rev-parse --abbrev-ref HEAD
-```
-Expected: `main`. If it prints `HEAD` (detached), run `git checkout main` first.
-
-- [ ] **Step 2: Move the files with `git mv`**
-
-```bash
-cd cost-estimator
-git mv scripts/test_buckets.py scripts/test_compare.py scripts/test_resolve_roots.py tests/
-git mv scripts/run-tests.sh scripts/run-tests.bat tests/
-mkdir -p dev
-git mv scripts/capture-screenshot.py scripts/regen-screenshots.sh scripts/regen-screenshots.bat dev/
-```
-
-- [ ] **Step 3: Fix the `sys.path` insert in `tests/test_buckets.py` and `tests/test_compare.py`**
-
-Both files currently have (line 9):
-```python
-sys.path.insert(0, str(Path(__file__).parent))
-```
-Change each to point at the sibling `scripts/` dir (now one level up):
-```python
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-```
-
-- [ ] **Step 4: Fix the spec-loader path in `tests/test_resolve_roots.py`**
-
-The `_load_module()` helper currently has:
-```python
-        spec = importlib.util.spec_from_file_location(
-            "analyze_month",
-            Path(__file__).parent / "analyze-month.py",
-        )
-```
-Change the path to:
-```python
-        spec = importlib.util.spec_from_file_location(
-            "analyze_month",
-            Path(__file__).parent.parent / "scripts" / "analyze-month.py",
-        )
-```
-
-- [ ] **Step 5: Fix the `capture-screenshot.py` reference in `dev/regen-screenshots.sh`**
-
-`regen-screenshots.sh` runs from `REPO_ROOT` and invokes `python scripts/capture-screenshot.py` twice. `capture-screenshot.py` now lives in `dev/`. Replace both occurrences of:
-```bash
-python scripts/capture-screenshot.py \
-```
-with:
-```bash
-python dev/capture-screenshot.py \
-```
-(`REPO_ROOT` resolution is unchanged: `dev/` is one level under root, same as `scripts/` was.)
-
-- [ ] **Step 6: Fix the `capture-screenshot.py` reference in `dev/regen-screenshots.bat`**
-
-Replace both occurrences of:
-```bat
-python "scripts\capture-screenshot.py"
-```
-with:
-```bat
-python "dev\capture-screenshot.py"
-```
-
-- [ ] **Step 7: Sweep README/SKILL.md for stale `scripts/<moved-file>` references**
-
-Run:
-```bash
-cd cost-estimator
-grep -rnE 'scripts/(test_|run-tests|capture-screenshot|regen-screenshots)' README.md SKILL.md 2>/dev/null || echo "(no stale refs)"
-```
-If any matches print, update them to the new `tests/` or `dev/` path. (Prose-only; no functional impact, but keep docs honest.)
-
-- [ ] **Step 8: Run the tests to verify the move didn't break imports**
-
-Run:
-```bash
-cd cost-estimator
-bash tests/run-tests.sh
-```
-Expected: ends with `All tests passed.` and exit 0. (`run-tests.sh` does `cd "$(dirname "$0")"` → `tests/`, runs each `test_*.py`; each test resolves `scripts/` via the fixed relative path.)
-
-- [ ] **Step 9: Commit in the cost-estimator submodule**
-
-```bash
-cd cost-estimator
-git add -A
-git commit -m "refactor: make scripts/ runtime-only (move tests->tests/, dev tooling->dev/)
-
-Installer ships scripts/ wholesale under the new top-level allowlist;
-relocate dev-only files so no within-dir pruning is needed. Test path
-refs updated to resolve scripts/ from tests/.
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
-
-### Task 2: Add `.skillpack` manifests
-
-Two skills ship content outside the baseline (`SKILL.md` + `scripts/` + `references/` + `assets/`). Declare the extras.
-
-**Files:**
-- Create: `cost-estimator/.skillpack`
-- Create: `progress-beacon/.skillpack`
-
-- [ ] **Step 1: Create `cost-estimator/.skillpack`**
-
-```
-# Extra top-level entries to install beyond the baseline
-# (SKILL.md, scripts/, references/, assets/). One per line; # = comment.
-REPORT_TEMPLATE.md
-```
-
-- [ ] **Step 2: Create `progress-beacon/.skillpack`**
-
-```
-# Extra top-level entries to install beyond the baseline.
-hooks/
-```
-
-- [ ] **Step 3: Commit each manifest in its submodule**
-
-```bash
-cd cost-estimator && git add .skillpack && \
-  git commit -m "chore: add .skillpack (ship REPORT_TEMPLATE.md)
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>" && cd ..
-cd progress-beacon && git checkout main 2>/dev/null; git add .skillpack && \
-  git commit -m "chore: add .skillpack (ship hooks/)
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>" && cd ..
-```
-(If a submodule is on detached HEAD, `git checkout main` before adding, as in Task 1 Step 1.)
-
----
-
 ## Phase 2: `install-skills.sh` allowlist rewrite (TDD)
 
 ### Task 3: Write the integration test harness
@@ -177,7 +21,7 @@ A self-contained bash harness that builds a synthetic skill fixture (a real git 
 
 `tests/` is a new top-level dir in the umbrella repo. The installer's main loop only processes dirs containing `.git`, so a plain `tests/` dir is never treated as a skill.
 
-- [ ] **Step 1: Write `tests/test-install.sh`**
+- [x] **Step 1: Write `tests/test-install.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -284,7 +128,7 @@ if [ "$FAILED" = 0 ]; then echo "ALL TESTS PASSED"; else echo "TESTS FAILED"; fi
 exit "$FAILED"
 ```
 
-- [ ] **Step 2: Run the harness against the CURRENT installer to confirm it FAILS**
+- [x] **Step 2: Run the harness against the CURRENT installer to confirm it FAILS**
 
 Run:
 ```bash
@@ -292,7 +136,7 @@ bash tests/test-install.sh
 ```
 Expected: `TESTS FAILED`. The current installer has no `SKILLS_SRC_ROOT` seam, so it scans the real skills-dir instead of the fixture, never installs `demoskill`, and the `assert_exists` checks fail on missing files. That RED confirms the harness runs and gates the rewrite. (Once Task 4 adds the seam and allowlist, the `__pycache__`-exclusion and cleanup assertions become the meaningful ones.)
 
-- [ ] **Step 3: Commit the test harness**
+- [x] **Step 3: Commit the test harness**
 
 ```bash
 git add tests/test-install.sh
