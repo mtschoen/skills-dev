@@ -80,17 +80,19 @@ assert_contains ".sh: uncommitted edit propagated" "$HOME_SH/.claude/skills/demo
 
 # ===== .bat under test (Windows only) =====
 if command -v cmd.exe >/dev/null 2>&1; then
+    # MSYS_NO_PATHCONV=1: stop Git Bash from rewriting cmd.exe's "/c" switch
+    # into "C:/" (which silently drops to an interactive shell, running nothing).
     SRC2="$(build_fixture)"
     HOME_BAT="$WORK/home_bat"; mkdir -p "$HOME_BAT"
     SRC2_WIN="$(cygpath -w "$SRC2")"; HOME_BAT_WIN="$(cygpath -w "$HOME_BAT")"
-    USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" \
+    USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude demoskill >/dev/null
     assert_install ".bat" "$HOME_BAT/.claude/skills"
 
     echo "[.bat] cleanup of prior-install cruft"
     mkdir -p "$HOME_BAT/.claude/skills/demoskill/reports"
     echo stale > "$HOME_BAT/.claude/skills/demoskill/reports/old.txt"
-    USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" \
+    USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude demoskill >/dev/null
     assert_absent ".bat: stale reports/ purged" "$HOME_BAT/.claude/skills/demoskill/reports"
 else
