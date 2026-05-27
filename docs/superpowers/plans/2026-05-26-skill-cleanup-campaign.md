@@ -36,6 +36,27 @@ The campaign's substantive work is **done**. The one remaining loose end is the
 `.maintenance.json` breadcrumb — corrected durably in the Minor fixes section
 below (the local untracked file itself left as-is; see there for the nuance).
 
+## Open follow-ups (next session)
+
+The three sessions are done; these two small items were deferred here by user
+choice (wrapped as a handoff, 2026-05-27):
+
+1. **Submodule detached-HEAD sweep.** The `.maintenance.json` finding named 5
+   detached-HEAD submodules; this campaign re-checked and resolved 3
+   (`cost-estimator`, `progress-beacon`, `review-in-parallel-pipelines`). **Still
+   unchecked: `escalate-over-shortcut` and `running-spikes`.** For each, run
+   `git -C <repo> symbolic-ref -q HEAD` (or `git submodule status`); if detached
+   with a stale local `main`, reattach via `git branch -f main HEAD && git checkout main`
+   — **but only when HEAD is at or ahead of `origin/main`.** Verify direction first
+   (`git rev-list --left-right --count origin/main...HEAD`): the progress-beacon
+   lesson this session was that some submodules were genuinely *behind* (real
+   upstream commits), where the fix is a fast-forward, not `branch -f`.
+2. **Close the seed note.** `~/.claude/notes/project_skills_cleanup_campaign.md`
+   still reads "planned" — mark it complete, then `python ~/.claude/sync-memory.py`
+   to propagate to the other machine. Once both follow-ups are done and this
+   section is empty, this plan doc can be deleted per the skills-dev plans
+   convention (lasting rationale already folded into the skills themselves).
+
 ## Sessions (sequenced; each ≈ one 200k-budget chunk)
 
 ### Session 1 — fast-tests references
