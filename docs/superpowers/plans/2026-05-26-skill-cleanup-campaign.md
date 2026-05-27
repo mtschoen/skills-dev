@@ -19,20 +19,20 @@ status. (Same spirit as the `wrap` skill, scoped to this campaign.)
 
 ## Current status
 
-**Session 1 complete** (2026-05-27; pushed to both hosts). fast-tests reference
-TODOs trimmed (8 speculative placeholders removed). The `restructure-over-exclude`
-reference was relocated wholesale from `fast-tests` to `maintaining-full-coverage`
-— it was coverage material (uncovered branches, exclusions) sitting in a speed
-skill that explicitly scopes coverage out (mid-session user call, beyond the
-original Session 1 scope; improves coherence). It became MFC's new
-`## Restructure Over Exclude` section, merging the git-wizard
-`AccessToDisposedClosure` example (the original Session 1 item #2) with the
-relocated coverage examples. MFC README install/report-file staleness fixed.
-fast-tests keeps its speed-only restructuring (Principle 5) plus a pointer to MFC.
+**Sessions 1 & 2 complete** (2026-05-27; all pushed to both hosts). See the
+Handoff log for per-session detail. Net so far: fast-tests reference TODOs
+trimmed; `restructure-over-exclude` relocated to `maintaining-full-coverage`
+(now its `## Restructure Over Exclude` section, with the git-wizard
+`AccessToDisposedClosure` example); MFC README staleness fixed; both stale
+"Not yet built" HANDOFF.md files deleted (clearing the last
+`escalate-over-improvise` refs).
 
-Next up: **Session 2** (stale HANDOFF.md scaffolding). Note: `fast-tests/HANDOFF.md`
-still lists the now-deleted `restructure-over-exclude.md` in its file tree —
-harmless, and Session 2 deletes that HANDOFF.md anyway.
+**Discovery:** Session 3's beacon `drift`-field removal is **already done** —
+three `progress-beacon` pointer-bump commits from the other machine landed on
+`origin/main` (`2b63444`, `522132c`, `acf9fb0`) doing exactly that work. So
+Session 3 below is now **only** the cost-estimator README predictive-cost fold.
+
+Next up: **Session 3 (reduced)** + the pending `.maintenance.json` minor fix.
 
 ## Sessions (sequenced; each ≈ one 200k-budget chunk)
 
@@ -54,6 +54,11 @@ harmless, and Session 2 deletes that HANDOFF.md anyway.
 
 ### Session 2 — stale HANDOFF.md scaffolding cleanup
 
+**DONE (2026-05-27).** Both HANDOFF.md deleted after diffing against the shipped
+SKILL.md (nothing load-bearing to fold — content survives in git history);
+READMEs updated; the sweep found no other stale root scaffolding across the 17
+submodules. Original bullets below for reference.
+
 - Two `HANDOFF.md` files sit at the roots of *shipped* skills, both headed
   **"Status: Not yet built"**:
   - `review-in-parallel-pipelines/HANDOFF.md` (skill shipped, closes #5) — also
@@ -67,22 +72,21 @@ harmless, and Session 2 deletes that HANDOFF.md anyway.
 - Sweep the other ~15 skills for similar stale root scaffolding.
 - Commit + push affected submodules; bump umbrella.
 
-### Session 3 — progress-beacon + cost-estimator
+### Session 3 — cost-estimator (reduced; beacon-drift half already done)
 
 - **Fold predictive cost → progress-beacon.** Predictive *time* already lives in
   the beacon's calibrated ETA; predictive *cost* is still "in design" per
   `project_cost_estimator_skill`. Edit `cost-estimator/README.md`: point the
   time-prediction half at progress-beacon, scope cost-estimator's predictive
-  section to cost only.
-- **Land the beacon drift-field removal.** `feedback_beacon_drift_uninformative`
-  says the `progress-beacon` SKILL.md `drift` field is *queued for removal* (the
-  status line computes drift objectively now). **CAUTION — cross-repo:** the
-  beacon JSON schema is parsed by `schoen-claude-status` (statusline) and a
-  `PostToolUse` hook. Verify those sides before/after; check
-  `project_beacon_pairing_fix` for the lockstep state. Removing the field from
-  the skill must not break the parsers.
-- Commit + push (skills-progress-beacon, skills-cost-estimator, + any sibling
-  repos the schema change touches).
+  section to cost only. **(still to do)**
+- ~~**Land the beacon drift-field removal.**~~ **DONE — already shipped from the
+  other machine** (umbrella commits `2b63444` "drop drift field", `522132c`
+  "drop vestigial drift guidance", `acf9fb0` "drift wording cleanup";
+  `progress-beacon` now at `0337307`, local llamabox fast-forwarded to match).
+  The cross-repo `schoen-claude-status` / `PostToolUse` parser caution was
+  presumably handled by whoever shipped it — worth a spot-check next time those
+  parsers are touched, but no action queued here.
+- Commit + push (skills-cost-estimator + umbrella) — only the README fold remains.
 
 ### Minor fixes (fold into whichever session is already in that repo)
 
@@ -130,3 +134,14 @@ prose above is the lesson, not yet the code.
   relocation was a mid-session user call (coverage material in a speed skill) —
   beyond original Session 1 scope but improves coherence. fast-tests HEAD
   `a89f46a`, MFC HEAD `59e41da`. Next: Session 2.
+- **2026-05-27 (Session 2):** Done + pushed both hosts. Deleted both stale
+  "Not yet built" HANDOFF.md (`fast-tests` → `634893d`,
+  `review-in-parallel-pipelines` → `7024414`); diff vs shipped SKILL.md showed
+  nothing load-bearing to fold. READMEs updated (repo-tree + installer-excludes
+  list). Cleared the last 2 `escalate-over-improvise` refs (they lived only in
+  the r-i-p-p HANDOFF; the SKILL.md already used `escalate-over-shortcut`). Sweep
+  found no other stale root scaffolding across 17 submodules. Gotcha hit: r-i-p-p
+  was in detached HEAD with a stale `main` ref — fixed via `git branch -f main HEAD`
+  before pushing. **Discovery:** Session 3's beacon drift-field removal already
+  shipped from the other machine (3 progress-beacon bumps on origin); Session 3
+  reduced to the cost-estimator README fold. Next: Session 3 (reduced).
