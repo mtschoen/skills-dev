@@ -19,10 +19,20 @@ status. (Same spirit as the `wrap` skill, scoped to this campaign.)
 
 ## Current status
 
-Campaign planned; nothing executed yet **except** the `escalate-over-improvise`
-→ `escalate-over-shortcut` reference fix in `fast-tests` (already shipped this
-session — 4 refs retargeted, committed, pushed; umbrella at `548a596`). Next up:
-**Session 1**.
+**Session 1 complete** (2026-05-27; pushed to both hosts). fast-tests reference
+TODOs trimmed (8 speculative placeholders removed). The `restructure-over-exclude`
+reference was relocated wholesale from `fast-tests` to `maintaining-full-coverage`
+— it was coverage material (uncovered branches, exclusions) sitting in a speed
+skill that explicitly scopes coverage out (mid-session user call, beyond the
+original Session 1 scope; improves coherence). It became MFC's new
+`## Restructure Over Exclude` section, merging the git-wizard
+`AccessToDisposedClosure` example (the original Session 1 item #2) with the
+relocated coverage examples. MFC README install/report-file staleness fixed.
+fast-tests keeps its speed-only restructuring (Principle 5) plus a pointer to MFC.
+
+Next up: **Session 2** (stale HANDOFF.md scaffolding). Note: `fast-tests/HANDOFF.md`
+still lists the now-deleted `restructure-over-exclude.md` in its file tree —
+harmless, and Session 2 deletes that HANDOFF.md anyway.
 
 ## Sessions (sequenced; each ≈ one 200k-budget chunk)
 
@@ -76,15 +86,18 @@ session — 4 refs retargeted, committed, pushed; umbrella at `548a596`). Next u
 
 ### Minor fixes (fold into whichever session is already in that repo)
 
-- `maintaining-full-coverage/README.md`: `test-report.txt` → `TEST-REPORT.md`
-  (SKILL.md standardized on the latter; README is stale).
+- ~~`maintaining-full-coverage/README.md`: `test-report.txt` → `TEST-REPORT.md`~~
+  **DONE (Session 1).** Also fixed stale `skill-draft/SKILL.md` install paths
+  (post root-layout migration `b3a0a98`).
 - Correct the `.maintenance.json` breadcrumb from 2026-05-26: the note claiming
   "origin/main advanced past the umbrella pointer" was wrong — it was a stale
   local `main` ref (detached HEAD), fixed via `git branch -f main origin/main`.
-  Nothing upstream was missing.
-- Consider a stronger restructure-over-exclude worked example *in
-  `maintaining-full-coverage` itself* (the lever is already banked as
-  `feedback_inspections_refactor_over_suppress`).
+  Nothing upstream was missing. **(still pending)**
+- ~~Consider a stronger restructure-over-exclude worked example *in
+  `maintaining-full-coverage` itself*~~ **DONE (Session 1)** — the entire
+  `restructure-over-exclude` reference now lives in MFC's
+  `## Restructure Over Exclude` section, with the git-wizard analyzer-suppression
+  case as the .NET worked example.
 
 ## Captured knowledge (do not lose)
 
@@ -109,3 +122,11 @@ prose above is the lesson, not yet the code.
   shipped was the `escalate-over-shortcut` reference fix in `fast-tests`. This
   doc + `~/.claude/notes/project_skills_cleanup_campaign.md` are the seed.
   Next session: Session 1.
+- **2026-05-27 (Session 1):** Done + pushed to both hosts. fast-tests: trimmed 8
+  speculative reference TODOs (`eb320c3`), then relocated `restructure-over-exclude`
+  to MFC and repointed (`a89f46a`). maintaining-full-coverage: added the git-wizard
+  worked example + README fixes (`a12d457`), then folded the relocated reference
+  into a `## Restructure Over Exclude` section + AUDIT row (`59e41da`). The
+  relocation was a mid-session user call (coverage material in a speed skill) —
+  beyond original Session 1 scope but improves coherence. fast-tests HEAD
+  `a89f46a`, MFC HEAD `59e41da`. Next: Session 2.
