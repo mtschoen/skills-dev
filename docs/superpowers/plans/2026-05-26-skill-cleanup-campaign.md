@@ -19,7 +19,7 @@ status. (Same spirit as the `wrap` skill, scoped to this campaign.)
 
 ## Current status
 
-**Sessions 1 & 2 complete** (2026-05-27; all pushed to both hosts). See the
+**All three sessions complete** (2026-05-27; all pushed to both hosts). See the
 Handoff log for per-session detail. Net so far: fast-tests reference TODOs
 trimmed; `restructure-over-exclude` relocated to `maintaining-full-coverage`
 (now its `## Restructure Over Exclude` section, with the git-wizard
@@ -32,7 +32,9 @@ three `progress-beacon` pointer-bump commits from the other machine landed on
 `origin/main` (`2b63444`, `522132c`, `acf9fb0`) doing exactly that work. So
 Session 3 below is now **only** the cost-estimator README predictive-cost fold.
 
-Next up: **Session 3 (reduced)** + the pending `.maintenance.json` minor fix.
+The campaign's substantive work is **done**. The one remaining loose end is the
+`.maintenance.json` breadcrumb — corrected durably in the Minor fixes section
+below (the local untracked file itself left as-is; see there for the nuance).
 
 ## Sessions (sequenced; each ≈ one 200k-budget chunk)
 
@@ -74,11 +76,10 @@ submodules. Original bullets below for reference.
 
 ### Session 3 — cost-estimator (reduced; beacon-drift half already done)
 
-- **Fold predictive cost → progress-beacon.** Predictive *time* already lives in
-  the beacon's calibrated ETA; predictive *cost* is still "in design" per
-  `project_cost_estimator_skill`. Edit `cost-estimator/README.md`: point the
-  time-prediction half at progress-beacon, scope cost-estimator's predictive
-  section to cost only. **(still to do)**
+- ~~**Fold predictive cost → progress-beacon.**~~ **DONE (Session 3, 2026-05-27).**
+  cost-estimator's predictive section was already cost-only; added a "Scope: cost,
+  not time" boundary note pointing time-to-complete at `progress-beacon`.
+  cost-estimator → `a89f17c`.
 - ~~**Land the beacon drift-field removal.**~~ **DONE — already shipped from the
   other machine** (umbrella commits `2b63444` "drop drift field", `522132c`
   "drop vestigial drift guidance", `acf9fb0` "drift wording cleanup";
@@ -93,10 +94,17 @@ submodules. Original bullets below for reference.
 - ~~`maintaining-full-coverage/README.md`: `test-report.txt` → `TEST-REPORT.md`~~
   **DONE (Session 1).** Also fixed stale `skill-draft/SKILL.md` install paths
   (post root-layout migration `b3a0a98`).
-- Correct the `.maintenance.json` breadcrumb from 2026-05-26: the note claiming
-  "origin/main advanced past the umbrella pointer" was wrong — it was a stale
-  local `main` ref (detached HEAD), fixed via `git branch -f main origin/main`.
-  Nothing upstream was missing. **(still pending)**
+- **`.maintenance.json` breadcrumb (2026-05-26) — corrected (2026-05-27).** It
+  flagged 5 submodules as detached HEADs whose `origin/main` "advanced 1-2 commits
+  beyond the umbrella pointer," and this plan originally claimed that was uniformly
+  a stale-local-`main` illusion. Session 3 found a **mix**: `cost-estimator`
+  (HEAD==main==origin/main) and `review-in-parallel-pipelines` were genuine
+  stale-ref/detached artifacts at the pinned pointer (resolved this campaign);
+  `progress-beacon` genuinely **had** 3 upstream commits the local lacked (the
+  drift-field removal — now integrated). `escalate-over-shortcut` + `running-spikes`
+  were not re-checked. The `.maintenance.json` file is untracked/local-only and
+  read by projdash tooling — left as-is rather than hand-editing a tool-read JSON;
+  this tracked note is the durable correction.
 - ~~Consider a stronger restructure-over-exclude worked example *in
   `maintaining-full-coverage` itself*~~ **DONE (Session 1)** — the entire
   `restructure-over-exclude` reference now lives in MFC's
@@ -145,3 +153,10 @@ prose above is the lesson, not yet the code.
   before pushing. **Discovery:** Session 3's beacon drift-field removal already
   shipped from the other machine (3 progress-beacon bumps on origin); Session 3
   reduced to the cost-estimator README fold. Next: Session 3 (reduced).
+- **2026-05-27 (Session 3, reduced):** Done + pushed both hosts. Only the
+  cost-estimator README predictive-cost fold remained (beacon drift-field half
+  already shipped from the other machine). cost-estimator was detached at `8de0ad6`
+  (HEAD==main==origin/main — the stale-ref illusion, nothing upstream); reattached,
+  added the "Scope: cost, not time" boundary note → `a89f17c`. Corrected the
+  `.maintenance.json` finding in Minor fixes (it was a mix, not a uniform illusion).
+  Campaign substantively complete.
