@@ -14,13 +14,13 @@
 #   -n / --dry-run   show what would change, don't copy
 #   --agents         install to ~/.agents/skills (canonical source of truth)
 #   --claude         install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
-#   --gemini         install to ~/.gemini/skills (Antigravity's global skills dir)
+#   --gemini         install to ~/.gemini/config/skills (Antigravity's global skills dir)
 #   --all            install to all known agent skill dirs
 #   positional args  limit to specific skill names (default: all)
 #
 # With no agent flag, installs only to harness dirs that ALREADY EXIST on this
 # machine, among ~/.agents/skills (canonical), ~/.claude/skills (Claude), and
-# ~/.gemini/skills (Antigravity). A destination whose parent harness dir (e.g.
+# ~/.gemini/config/skills (Antigravity). A destination whose parent harness dir (e.g.
 # ~/.gemini) is absent is skipped, so harnesses you don't use get no phantom
 # dir. Pass an explicit --agents/--claude/--gemini/--all to create a missing
 # one. Codex reads ~/.agents/skills natively, so it needs no copy.
@@ -53,7 +53,7 @@ add_destination() {
 add_all_destinations() {
     maybe_add_destination agents "${HOME}/.agents/skills"
     maybe_add_destination claude "${HOME}/.claude/skills"
-    maybe_add_destination gemini "${HOME}/.gemini/skills"
+    maybe_add_destination gemini "${HOME}/.gemini/config/skills"
 }
 
 # Add a destination, but in default mode (no explicit agent flag) skip it when
@@ -76,7 +76,7 @@ while [ $# -gt 0 ]; do
         -n|--dry-run) DRY_RUN=1; shift ;;
         --agents) add_destination agents "${HOME}/.agents/skills"; shift ;;
         --claude) add_destination claude "${HOME}/.claude/skills"; shift ;;
-        --gemini) add_destination gemini "${HOME}/.gemini/skills"; shift ;;
+        --gemini) add_destination gemini "${HOME}/.gemini/config/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         -h|--help)
             sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'

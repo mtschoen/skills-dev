@@ -16,7 +16,7 @@ rem   -y / --yes       overwrite without prompting
 rem   -n / --dry-run   show what would change, don't copy
 rem   --agents         install to %%USERPROFILE%%\.agents\skills
 rem   --claude         install to %%USERPROFILE%%\.claude\skills
-rem   --gemini         install to %%USERPROFILE%%\.gemini\skills
+rem   --gemini         install to %%USERPROFILE%%\.gemini\config\skills
 rem   --all            install to all known agent skill dirs
 rem   positional args  limit to specific skill names (default: all)
 rem
@@ -45,7 +45,7 @@ if /i "%~1"=="-n"         (set "DRY_RUN=1"    & shift & goto parse_args)
 if /i "%~1"=="--dry-run"  (set "DRY_RUN=1"    & shift & goto parse_args)
 if /i "%~1"=="--agents"   (call :add_dest agents "%USERPROFILE%\.agents\skills" & shift & goto parse_args)
 if /i "%~1"=="--claude"   (call :add_dest claude "%USERPROFILE%\.claude\skills" & shift & goto parse_args)
-if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\skills" & shift & goto parse_args)
+if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\config\skills" & shift & goto parse_args)
 if /i "%~1"=="--all"      (call :add_all_dests & shift & goto parse_args)
 if /i "%~1"=="-h"         goto usage
 if /i "%~1"=="--help"     goto usage
@@ -92,7 +92,7 @@ exit /b 0
 :add_all_dests
 call :maybe_add_one agents "%USERPROFILE%\.agents\skills"
 call :maybe_add_one claude "%USERPROFILE%\.claude\skills"
-call :maybe_add_one gemini "%USERPROFILE%\.gemini\skills"
+call :maybe_add_one gemini "%USERPROFILE%\.gemini\config\skills"
 exit /b 0
 
 :maybe_add_one
@@ -246,7 +246,7 @@ echo   -y / --yes       overwrite without prompting
 echo   -n / --dry-run   show what would change, don't copy
 echo   --agents         install to %%USERPROFILE%%\.agents\skills
 echo   --claude         install to %%USERPROFILE%%\.claude\skills
-echo   --gemini         install to %%USERPROFILE%%\.gemini\skills
+echo   --gemini         install to %%USERPROFILE%%\.gemini\config\skills
 echo   --all            install to all known agent skill dirs
 echo   positional args  limit to specific skill names ^(default: all^)
 exit /b 0
