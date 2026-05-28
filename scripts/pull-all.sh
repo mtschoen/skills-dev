@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Fetch + fast-forward main from `origin` and optionally one additional remote
 # named with `--remote <name>` in every active submodule and the skills-dev
-# index. Does not bump submodule pointers — `git add` and commit those manually
-# if you want them recorded in the index.
+# index. Submodules left in detached HEAD by a recursive superproject pull /
+# submodule-update are re-attached to main first, so the FF advances the main
+# BRANCH ref rather than a throwaway detached HEAD (which push-all and the
+# install scripts read -- the cause of a submodule silently reading "behind").
+# Does not bump submodule pointers -- `git add` and commit those manually if you
+# want them recorded in the index.
 #
 # Run from anywhere; the script cd's to the repo root.
 
@@ -46,6 +50,13 @@ pull_one() {
   fi
   echo "=== $dir ($remote) ==="
   git -C "$dir" fetch "$remote" || { echo "  FAILED: fetch"; return; }
+  # Only re-attach when detached: a superproject pull / submodule-update leaves
+  # submodules in detached HEAD, so the FF below would move only that throwaway
+  # HEAD and leave the main BRANCH behind. If already on a branch, leave it be
+  # (this function also runs against the skills-dev superproject itself).
+  if ! git -C "$dir" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    git -C "$dir" switch --quiet main || { echo "  (detached HEAD; couldn't switch to main -- local commits or dirty tree, resolve manually)"; return; }
+  fi
   git -C "$dir" merge --ff-only "$remote/main" || echo "  (not fast-forwardable; resolve manually)"
 }
 

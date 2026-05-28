@@ -1,7 +1,11 @@
 @echo off
 rem Fetch + fast-forward main from origin and optionally one additional remote
 rem named with --remote <name> in every active submodule and the skills-dev
-rem index. Does not bump submodule pointers.
+rem index. Submodules left in detached HEAD by a recursive superproject pull /
+rem submodule-update are re-attached to main first, so the FF advances the main
+rem BRANCH ref rather than a throwaway detached HEAD (which push-all and the
+rem install scripts read -- the cause of a submodule silently reading "behind").
+rem Does not bump submodule pointers.
 rem Run from anywhere; the script cd's to the repo root.
 setlocal enabledelayedexpansion
 cd /d "%~dp0\.."
@@ -51,6 +55,18 @@ if errorlevel 1 (
   echo   FAILED: fetch
   goto :eof
 )
+rem Only re-attach when detached: a superproject pull / submodule-update leaves
+rem submodules in detached HEAD, so the FF below would move only that throwaway
+rem HEAD and leave the main BRANCH behind. If already on a branch, leave it be
+rem (this subroutine also runs against the skills-dev superproject itself).
+git -C "%DIR%" symbolic-ref -q HEAD >nul 2>&1
+if not errorlevel 1 goto :pull_merge
+git -C "%DIR%" switch --quiet main
+if errorlevel 1 (
+  echo   ^(detached HEAD; couldn't switch to main -- local commits or dirty tree, resolve manually^)
+  goto :eof
+)
+:pull_merge
 git -C "%DIR%" merge --ff-only %REMOTE%/main
 if errorlevel 1 echo   ^(not fast-forwardable; resolve manually^)
 goto :eof
