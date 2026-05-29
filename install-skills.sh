@@ -6,8 +6,11 @@
 # a top-level allowlist: SKILL.md + scripts/ + references/ + assets/, plus any
 # extra top-level entries listed in the skill's optional `.skillpack` manifest.
 # Shipping tracked files only means generated junk (e.g. __pycache__) can never
-# leak. Each install is a true mirror of a clean staging tree, so files left in
-# the destination by older installs are removed.
+# leak from source. Each install is a true mirror of a clean staging tree, so
+# files left in the destination by older installs are removed -- EXCEPT
+# generated junk created in the DEST by running installed scripts (__pycache__,
+# *.pyc, .pytest_cache), which is preserved and never reported as drift (see
+# IGNORE_PATTERNS below).
 #
 # Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 #   -y / --yes       overwrite without prompting
@@ -34,12 +37,34 @@ SRC_ROOT="${SKILLS_SRC_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"}"
 ASSUME_YES=0
 DRY_RUN=0
 DEFAULT_MODE=0
+ABORT=0
 SELECTED=()
 DESTINATIONS=()
 
 # Baseline top-level entries shipped for every skill (Agent Skills convention
 # + the required SKILL.md). Extra entries come from each skill's .skillpack.
 BASELINE_INCLUDES=(SKILL.md scripts references assets)
+
+# Generated junk to preserve in the destination (created by running installed
+# scripts). Excluded from both the diff preview and the mirror apply, so it is
+# never reported as drift and never deleted.
+IGNORE_PATTERNS=(__pycache__ '*.pyc' '*.pyo' .pytest_cache)
+
+# Mirror $1 -> $2, deleting destination files absent from source but preserving
+# IGNORE_PATTERNS. Prefers rsync (surgical); falls back to rm+cp when rsync is
+# unavailable (the fallback cannot preserve dest-only junk -- acceptable, since
+# the platform that actually hits the junk problem is Windows / the .bat).
+mirror_tree() {
+    local from="$1" to="$2" p
+    if command -v rsync >/dev/null 2>&1; then
+        local -a rexcl=()
+        for p in "${IGNORE_PATTERNS[@]}"; do rexcl+=(--exclude="$p"); done
+        mkdir -p "$to"
+        rsync -a --delete "${rexcl[@]}" "$from/" "$to/"
+    else
+        rm -rf "$to"; mkdir -p "$to"; cp -a "$from/." "$to/"
+    fi
+}
 
 add_destination() {
     local name="$1" path="$2"
@@ -147,14 +172,18 @@ confirm() {
     if [ "$ASSUME_YES" = 1 ]; then return 0; fi
     local reply
     if [ -r /dev/tty ]; then
-        read -r -p "$prompt [y/N] " reply </dev/tty
+        read -r -p "$prompt [y/N/q=quit] " reply </dev/tty
     elif [ -t 0 ]; then
-        read -r -p "$prompt [y/N] " reply
+        read -r -p "$prompt [y/N/q=quit] " reply
     else
         echo "  (no tty; skipping. re-run with -y to overwrite.)" >&2
         return 1
     fi
-    [[ "$reply" =~ ^[Yy]$ ]]
+    case "$reply" in
+        [Qq]) ABORT=1; return 1 ;;
+        [Yy]) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 install_skill_to_destination() {
@@ -173,15 +202,16 @@ install_skill_to_destination() {
     if [ ! -e "$dest" ]; then
         echo "install $name -> $dest ($agent)"
         if [ "$DRY_RUN" != 1 ]; then
-            mkdir -p "$dest"
-            cp -a "$staging/." "$dest/"
+            mirror_tree "$staging" "$dest"
         fi
         rm -rf "$staging"
         return
     fi
 
-    local diff_out
-    diff_out="$(diff -rq "$staging" "$dest" 2>&1 || true)"
+    local diff_out p
+    local -a diff_excl=()
+    for p in "${IGNORE_PATTERNS[@]}"; do diff_excl+=(-x "$p"); done
+    diff_out="$(diff -rq "${diff_excl[@]}" "$staging" "$dest" 2>&1 || true)"
     if [ -z "$diff_out" ]; then
         echo "unchanged $name ($agent)"
         rm -rf "$staging"
@@ -200,9 +230,7 @@ install_skill_to_destination() {
     fi
 
     if confirm "overwrite $dest?"; then
-        rm -rf "$dest"
-        mkdir -p "$dest"
-        cp -a "$staging/." "$dest/"
+        mirror_tree "$staging" "$dest"
         echo "  updated."
     else
         echo "  skipped."
@@ -213,6 +241,7 @@ install_skill_to_destination() {
 install_skill() {
     local name="$1" destination agent dest_root
     for destination in "${DESTINATIONS[@]}"; do
+        [ "$ABORT" = 1 ] && break
         agent="${destination%%|*}"
         dest_root="${destination#*|}"
         install_skill_to_destination "$name" "$agent" "$dest_root"
@@ -220,8 +249,14 @@ install_skill() {
 }
 
 for src in "$SRC_ROOT"/*/; do
+    [ "$ABORT" = 1 ] && break
     name="$(basename "$src")"
     [ -e "$src/.git" ] || continue       # only git submodules / repos
     is_selected "$name" || continue
     install_skill "$name"
 done
+
+if [ "$ABORT" = 1 ]; then
+    echo
+    echo "aborted by user (q); remaining skills skipped."
+fi

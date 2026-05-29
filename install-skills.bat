@@ -7,9 +7,11 @@ rem Each top-level dir here is a skill submodule with a SKILL.md at its root.
 rem The installer ships only GIT-TRACKED files (git ls-files), filtered to a
 rem top-level allowlist: SKILL.md + scripts\ + references\ + assets\, plus any
 rem extra top-level entries listed in the skill's optional .skillpack manifest.
-rem Tracked-only shipping means generated junk (e.g. __pycache__) can't leak.
-rem Each install mirrors a clean staging tree, so files left by older installs
-rem are removed.
+rem Tracked-only shipping means generated junk (e.g. __pycache__) can't leak
+rem from source. Each install mirrors a clean staging tree, so files left by
+rem older installs are removed -- EXCEPT generated junk created in the DEST by
+rem running installed scripts (__pycache__, *.pyc, .pytest_cache), which is
+rem preserved and never reported as drift (see ROBO_EXCL below).
 rem
 rem Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 rem   -y / --yes       overwrite without prompting
@@ -36,6 +38,12 @@ set "DRY_RUN=0"
 set "DEFAULT_MODE=0"
 set "SELECTED="
 set "DEST_COUNT=0"
+set "ABORT=0"
+
+rem Generated junk to preserve in the destination (created by running installed
+rem scripts). Excluding these from robocopy means /MIR won't delete them and the
+rem /L preview won't list them as *EXTRA. Applies to every robocopy call below.
+set "ROBO_EXCL=/XD __pycache__ .pytest_cache /XF *.pyc *.pyo"
 
 :parse_args
 if "%~1"=="" goto parse_done
@@ -72,9 +80,16 @@ if "!DEFAULT_MODE!"=="1" if "!DEST_COUNT!"=="0" (
 set "BASELINE= SKILL.md scripts references assets "
 
 for /d %%D in ("%SRC_ROOT%\*") do (
-    set "name=%%~nxD"
-    set "src=%%~fD"
-    if exist "!src!\.git" call :maybe_install "!name!" "!src!"
+    if not "!ABORT!"=="1" (
+        set "name=%%~nxD"
+        set "src=%%~fD"
+        if exist "!src!\.git" call :maybe_install "!name!" "!src!"
+    )
+)
+
+if "!ABORT!"=="1" (
+    echo.
+    echo aborted by user ^(q^); remaining skills skipped.
 )
 
 endlocal
@@ -120,7 +135,7 @@ exit /b 0
 call :is_selected "%~1"
 if errorlevel 1 exit /b 0
 for /l %%I in (1,1,%DEST_COUNT%) do (
-    call :install_skill "%~1" "%~2" "!DEST_%%I_NAME!" "!DEST_%%I_PATH!"
+    if not "!ABORT!"=="1" call :install_skill "%~1" "%~2" "!DEST_%%I_NAME!" "!DEST_%%I_PATH!"
 )
 exit /b 0
 
@@ -152,13 +167,13 @@ if not exist "!dest!" (
     echo install !n! -^> !dest! ^(!agent!^)
     if "!DRY_RUN!"=="1" ( rmdir /s /q "!staging!" & exit /b 0 )
     if not exist "!dest_root!" mkdir "!dest_root!"
-    robocopy "!staging!" "!dest!" /MIR /NJH /NJS /NDL /NP /NS /NC /NFL >nul
+    robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
     rmdir /s /q "!staging!"
     exit /b 0
 )
 
 set "tmpout=%TEMP%\install-skills-!agent!-!n!.txt"
-robocopy "!staging!" "!dest!" /MIR /L /NJH /NJS /NDL /NP /NS /FP > "!tmpout!"
+robocopy "!staging!" "!dest!" /MIR /L !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /FP > "!tmpout!"
 set "rc=!errorlevel!"
 
 if !rc! geq 8 (
@@ -193,7 +208,7 @@ if errorlevel 1 (
     exit /b 0
 )
 if not exist "!dest_root!" mkdir "!dest_root!"
-robocopy "!staging!" "!dest!" /MIR /NJH /NJS /NDL /NP /NS /NC /NFL >nul
+robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
 echo   updated.
 rmdir /s /q "!staging!"
 exit /b 0
@@ -230,11 +245,12 @@ exit /b 0
 :confirm
 if "!ASSUME_YES!"=="1" exit /b 0
 set "reply=__NOPROMPT__"
-set /p "reply=%~1 [y/N] "
+set /p "reply=%~1 [y/N/q=quit] "
 if "!reply!"=="__NOPROMPT__" (
     echo   ^(no tty; skipping. re-run with -y to overwrite.^) 1>&2
     exit /b 1
 )
+if /i "!reply!"=="q" (set "ABORT=1" & exit /b 1)
 if /i "!reply!"=="y" exit /b 0
 exit /b 1
 
