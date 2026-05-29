@@ -5,39 +5,55 @@ and argument parsing logic.
 """
 
 import subprocess
-import pytest
 
-from .conftest import run_push_script, run_pull_script, tmp_git_repo
+from .conftest import run_pull_script, run_push_script
 
 
 def _bare_git_init(path):
     """Initialize a bare git repo at *path*."""
-    subprocess.run(["git", "init", "--bare", str(path)], check=True,
-                   capture_output=True)
+    subprocess.run(
+        ["git", "init", "--bare", str(path)], check=True, capture_output=True
+    )
 
 
 def _git_init(path):
     """Initialize a git repo at *path*, add a commit, and create main branch."""
     subprocess.run(["git", "init", str(path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.email",
-                    "test@example.com"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.name",
-                    "Test"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "config", "user.email", "test@example.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(path), "config", "user.name", "Test"],
+        check=True,
+        capture_output=True,
+    )
     # Create initial commit
     (path / "initial.txt").write_text("initial\n")
-    subprocess.run(["git", "-C", str(path), "add", "."], check=True,
-                   capture_output=True)
-    subprocess.run(["git", "-C", str(path), "commit", "-m", "init"],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(path), "commit", "-m", "init"],
+        check=True,
+        capture_output=True,
+    )
     # Rename branch to main (standard for this repo)
-    subprocess.run(["git", "-C", str(path), "branch", "-M", "main"],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "branch", "-M", "main"],
+        check=True,
+        capture_output=True,
+    )
 
 
 def _git_add_remote(path, name, url):
     """Add a git remote to the repo at *path*."""
-    subprocess.run(["git", "-C", str(path), "remote", "add", name, str(url)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "remote", "add", name, str(url)],
+        check=True,
+        capture_output=True,
+    )
 
 
 class TestPushAllHelpAndUsage:
@@ -132,10 +148,16 @@ class TestPushAllRemoteFlag:
         _git_add_remote(tmp_git_repo, "backup", str(remote_dir))
 
         # Push main to bare repos so rev-list comparison works
-        subprocess.run(["git", "-C", str(tmp_git_repo), "push", "origin", "main"],
-                       capture_output=True, check=True)
-        subprocess.run(["git", "-C", str(tmp_git_repo), "push", "backup", "main"],
-                       capture_output=True, check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_git_repo), "push", "origin", "main"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_git_repo), "push", "backup", "main"],
+            capture_output=True,
+            check=True,
+        )
 
         result = run_push_script(tmp_git_repo, "--remote", "backup")
         assert result.returncode == 0
@@ -159,8 +181,11 @@ class TestPushAllWithSubmodules:
         _git_add_remote(tmp_git_repo, "origin", str(main_remote))
 
         # Push main so remote comparison works
-        subprocess.run(["git", "-C", str(tmp_git_repo), "push", "origin", "main"],
-                       capture_output=True, check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_git_repo), "push", "origin", "main"],
+            capture_output=True,
+            check=True,
+        )
 
         # Create a .gitmodules file (required for push-all.sh to discover submodules)
         (tmp_git_repo / ".gitmodules").write_text(
@@ -175,8 +200,11 @@ class TestPushAllWithSubmodules:
         _git_add_remote(sub_dir, "origin", str(sub_remote))
 
         # Push main to the submodule's separate remote so it doesn't conflict
-        subprocess.run(["git", "-C", str(sub_dir), "push", "origin", "main"],
-                       capture_output=True, check=True)
+        subprocess.run(
+            ["git", "-C", str(sub_dir), "push", "origin", "main"],
+            capture_output=True,
+            check=True,
+        )
 
         result = run_push_script(tmp_git_repo)
         assert result.returncode == 0

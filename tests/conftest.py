@@ -3,6 +3,7 @@
 import os
 import pathlib
 import subprocess
+
 import pytest
 
 # Path to the repository root (where the scripts live)
@@ -31,9 +32,7 @@ def tmp_repo(tmp_path):
 
     # Copy install-skills.sh to the repo root
     if INSTALL_SKILLS_SH.exists():
-        (repo_root / "install-skills.sh").write_text(
-            INSTALL_SKILLS_SH.read_text()
-        )
+        (repo_root / "install-skills.sh").write_text(INSTALL_SKILLS_SH.read_text())
 
     # Create scripts/ directory and copy push/pull scripts
     scripts_dir = repo_root / "scripts"
@@ -64,10 +63,10 @@ def make_skill(repo_root, name, files=None):
         target = skill_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
-    subprocess.run(["git", "init", "-q"], cwd=skill_dir, check=True,
-                   capture_output=True)
-    subprocess.run(["git", "add", "-A"], cwd=skill_dir, check=True,
-                   capture_output=True)
+    subprocess.run(
+        ["git", "init", "-q"], cwd=skill_dir, check=True, capture_output=True
+    )
+    subprocess.run(["git", "add", "-A"], cwd=skill_dir, check=True, capture_output=True)
     return skill_dir
 
 

@@ -7,6 +7,7 @@ tests invoke the real `agentskills` binary and are skipped if it isn't on PATH.
 Runs under pytest, or standalone: python scripts/test_validate_skills.py
 (no third-party dependency).
 """
+
 import shutil
 import sys
 import tempfile
@@ -54,8 +55,12 @@ def _fail_runner(skill_dir):
 
 # --- parse_submodule_paths ---
 
+
 def test_parse_submodule_paths_reads_every_path():
-    assert validator.parse_submodule_paths(_gitmodules(["foo", "bar-baz"])) == ["foo", "bar-baz"]
+    assert validator.parse_submodule_paths(_gitmodules(["foo", "bar-baz"])) == [
+        "foo",
+        "bar-baz",
+    ]
 
 
 def test_parse_submodule_paths_empty_returns_empty_list():
@@ -63,6 +68,7 @@ def test_parse_submodule_paths_empty_returns_empty_list():
 
 
 # --- validate_skill fleet logic (injected runner, no external tool) ---
+
 
 def test_good_skill_passes():
     repo = _make_repo({"alpha": _good_skill("alpha")})
@@ -90,6 +96,7 @@ def test_wip_submodule_with_content_but_no_skill_md_is_skipped():
 
 # --- validate_repo / evaluate ---
 
+
 def test_validate_repo_counts_validated_skills():
     repo = _make_repo({"alpha": _good_skill("alpha"), "beta": _good_skill("beta")})
     errors, validated, skipped = validator.validate_repo(repo, runner=_pass_runner)
@@ -115,7 +122,9 @@ def test_evaluate_invalid_repo_exits_one():
 
 
 def test_evaluate_broken_checkout_empty_dirs_exits_one():
-    code, _lines = validator.evaluate(_make_repo({"alpha": None, "beta": None}), runner=_pass_runner)
+    code, _lines = validator.evaluate(
+        _make_repo({"alpha": None, "beta": None}), runner=_pass_runner
+    )
     assert code == 1
 
 
@@ -123,7 +132,9 @@ def test_evaluate_no_submodules_refuses_vacuous_pass():
     repo = Path(tempfile.mkdtemp())
     (repo / ".gitmodules").write_text("", encoding="utf-8")
     code, lines = validator.evaluate(repo, runner=_pass_runner)
-    assert code == 2, "an empty submodule set must not pass — that hides a broken checkout"
+    assert code == 2, (
+        "an empty submodule set must not pass — that hides a broken checkout"
+    )
     assert any("vacuous" in line.lower() for line in lines)
 
 
@@ -142,7 +153,9 @@ def test_integration_real_good_skill():
 
 def test_integration_real_bad_skill_name_mismatch():
     if _AGENTSKILLS is None:
-        print("SKIP test_integration_real_bad_skill_name_mismatch (agentskills not on PATH)")
+        print(
+            "SKIP test_integration_real_bad_skill_name_mismatch (agentskills not on PATH)"
+        )
         return
     repo = _make_repo({"alpha": _good_skill("not-alpha")})
     errors = validator.validate_skill(repo, "alpha")
@@ -150,8 +163,11 @@ def test_integration_real_bad_skill_name_mismatch():
 
 
 def _run_all():
-    tests = [(name, obj) for name, obj in sorted(globals().items())
-             if name.startswith("test_") and callable(obj)]
+    tests = [
+        (name, obj)
+        for name, obj in sorted(globals().items())
+        if name.startswith("test_") and callable(obj)
+    ]
     failures = []
     for name, fn in tests:
         try:
@@ -160,7 +176,7 @@ def _run_all():
         except AssertionError as exc:
             failures.append((name, f"AssertionError: {exc}"))
             print(f"FAIL {name}: {exc}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             failures.append((name, f"{type(exc).__name__}: {exc}"))
             print(f"ERROR {name}: {type(exc).__name__}: {exc}")
     print(f"\n{len(tests) - len(failures)}/{len(tests)} passed")

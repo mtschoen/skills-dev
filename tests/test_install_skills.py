@@ -12,7 +12,7 @@ repo and stages the files — the installer enumerates shippable content via
 
 import subprocess
 
-from .conftest import run_install_script, make_skill
+from .conftest import make_skill, run_install_script
 
 
 def home_with(tmp_path, *harness_dirs):
@@ -46,7 +46,9 @@ class TestHelpAndUsage:
         result = run_install_script(tmp_repo, "-h")
         assert result.returncode == 0
         first = result.stdout.strip().split("\n")[0]
-        assert first == "Install skills from this repo into one or more agent config dirs."
+        assert (
+            first == "Install skills from this repo into one or more agent config dirs."
+        )
 
     def test_help_documents_existing_only_default(self, tmp_repo):
         result = run_install_script(tmp_repo, "--help")
@@ -98,10 +100,14 @@ class TestInstallContent:
         assert (tmp_path / ".claude" / "skills" / "yes-skill" / "SKILL.md").exists()
 
     def test_allowlisted_subdir_content_copies(self, tmp_repo, tmp_path):
-        make_skill(tmp_repo, "withref", files={
-            "SKILL.md": "# withref\n",
-            "references/note.txt": "hello\n",
-        })
+        make_skill(
+            tmp_repo,
+            "withref",
+            files={
+                "SKILL.md": "# withref\n",
+                "references/note.txt": "hello\n",
+            },
+        )
         env = home_with(tmp_path, ".claude")
         result = run_install_script(tmp_repo, "-y", "withref", env_override=env)
         assert result.returncode == 0
@@ -116,22 +122,37 @@ class TestDestinationFlags:
 
     def test_agents_flag(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "agents-skill")
-        result = run_install_script(tmp_repo, "--agents", "-y", "agents-skill",
-                                    env_override={"HOME": str(tmp_path)})
+        result = run_install_script(
+            tmp_repo,
+            "--agents",
+            "-y",
+            "agents-skill",
+            env_override={"HOME": str(tmp_path)},
+        )
         assert result.returncode == 0
         assert (tmp_path / ".agents" / "skills" / "agents-skill" / "SKILL.md").exists()
 
     def test_claude_flag(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "claude-skill")
-        result = run_install_script(tmp_repo, "--claude", "-y", "claude-skill",
-                                    env_override={"HOME": str(tmp_path)})
+        result = run_install_script(
+            tmp_repo,
+            "--claude",
+            "-y",
+            "claude-skill",
+            env_override={"HOME": str(tmp_path)},
+        )
         assert result.returncode == 0
         assert (tmp_path / ".claude" / "skills" / "claude-skill" / "SKILL.md").exists()
 
     def test_gemini_flag(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "gemini-skill")
-        result = run_install_script(tmp_repo, "--gemini", "-y", "gemini-skill",
-                                    env_override={"HOME": str(tmp_path)})
+        result = run_install_script(
+            tmp_repo,
+            "--gemini",
+            "-y",
+            "gemini-skill",
+            env_override={"HOME": str(tmp_path)},
+        )
         assert result.returncode == 0
         assert (tmp_path / ".gemini" / "skills" / "gemini-skill" / "SKILL.md").exists()
 
@@ -171,16 +192,18 @@ class TestExistingOnlyDefault:
     def test_explicit_flag_creates_absent_harness(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "forced")
         env = {"HOME": str(tmp_path)}  # .gemini absent
-        result = run_install_script(tmp_repo, "--gemini", "-y", "forced",
-                                    env_override=env)
+        result = run_install_script(
+            tmp_repo, "--gemini", "-y", "forced", env_override=env
+        )
         assert result.returncode == 0
         assert (tmp_path / ".gemini" / "skills" / "forced" / "SKILL.md").exists()
 
     def test_all_flag_force_creates_every_harness(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "everywhere")
         env = {"HOME": str(tmp_path)}  # nothing exists
-        result = run_install_script(tmp_repo, "--all", "-y", "everywhere",
-                                    env_override=env)
+        result = run_install_script(
+            tmp_repo, "--all", "-y", "everywhere", env_override=env
+        )
         assert result.returncode == 0
         for harness in (".agents", ".claude", ".gemini"):
             assert (tmp_path / harness / "skills" / "everywhere" / "SKILL.md").exists()
@@ -220,13 +243,17 @@ class TestDefaultSelection:
 
 class TestAllowlistStaging:
     def test_non_allowlisted_toplevel_is_excluded(self, tmp_repo, tmp_path):
-        make_skill(tmp_repo, "trim", files={
-            "SKILL.md": "# trim\n",
-            "scripts/run.sh": "echo hi\n",     # allowlisted
-            "README.md": "readme\n",           # not allowlisted
-            ".gitignore": "*.tmp\n",           # not allowlisted
-            "evals/case.md": "eval\n",         # not allowlisted
-        })
+        make_skill(
+            tmp_repo,
+            "trim",
+            files={
+                "SKILL.md": "# trim\n",
+                "scripts/run.sh": "echo hi\n",  # allowlisted
+                "README.md": "readme\n",  # not allowlisted
+                ".gitignore": "*.tmp\n",  # not allowlisted
+                "evals/case.md": "eval\n",  # not allowlisted
+            },
+        )
         env = home_with(tmp_path, ".claude")
         result = run_install_script(tmp_repo, "-y", "trim", env_override=env)
         assert result.returncode == 0
@@ -239,12 +266,16 @@ class TestAllowlistStaging:
         assert not (dest / ".git").exists()
 
     def test_skillpack_extends_allowlist(self, tmp_repo, tmp_path):
-        make_skill(tmp_repo, "packed", files={
-            "SKILL.md": "# packed\n",
-            "hooks/hook.sh": "echo hook\n",    # shipped via .skillpack
-            "extras/data.txt": "x\n",          # not declared -> excluded
-            ".skillpack": "hooks\n",
-        })
+        make_skill(
+            tmp_repo,
+            "packed",
+            files={
+                "SKILL.md": "# packed\n",
+                "hooks/hook.sh": "echo hook\n",  # shipped via .skillpack
+                "extras/data.txt": "x\n",  # not declared -> excluded
+                ".skillpack": "hooks\n",
+            },
+        )
         env = home_with(tmp_path, ".claude")
         result = run_install_script(tmp_repo, "-y", "packed", env_override=env)
         assert result.returncode == 0
@@ -299,11 +330,15 @@ class TestUpdatePreview:
     leak into the user-facing preview (it reads like a bug otherwise)."""
 
     def test_update_preview_is_clean_and_symbolic(self, tmp_repo, tmp_path):
-        skill = make_skill(tmp_repo, "evolve", files={
-            "SKILL.md": "# evolve\nv1\n",
-            "references/keep.md": "keep\n",
-            "references/gone.md": "remove me\n",
-        })
+        skill = make_skill(
+            tmp_repo,
+            "evolve",
+            files={
+                "SKILL.md": "# evolve\nv1\n",
+                "references/keep.md": "keep\n",
+                "references/gone.md": "remove me\n",
+            },
+        )
         env = home_with(tmp_path, ".claude")
 
         # First install for real so the destination exists.
@@ -316,8 +351,7 @@ class TestUpdatePreview:
         (skill / "SKILL.md").write_text("# evolve\nv2 changed\n")
         (skill / "references" / "added.md").write_text("added\n")
         (skill / "references" / "gone.md").unlink()
-        subprocess.run(["git", "add", "-A"], cwd=skill, check=True,
-                       capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=skill, check=True, capture_output=True)
 
         # Dry-run shows the diff preview without applying.
         result = run_install_script(tmp_repo, "-n", "evolve", env_override=env)

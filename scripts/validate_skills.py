@@ -18,6 +18,7 @@ Exit codes: 0 = all valid, 1 = validation errors, 2 = nothing validated.
 
 Run from anywhere:  python scripts/validate_skills.py
 """
+
 import re
 import shutil
 import subprocess
@@ -113,13 +114,27 @@ def validate_repo(repo_root: Path, runner=run_agentskills):
 def evaluate(repo_root: Path, runner=run_agentskills):
     """Run validation and return (exit_code, output_lines)."""
     errors, validated, skipped = validate_repo(repo_root, runner=runner)
-    notices = [f"note: skipped {name} (submodule has no SKILL.md yet)" for name in skipped]
+    notices = [
+        f"note: skipped {name} (submodule has no SKILL.md yet)" for name in skipped
+    ]
     if errors:
-        return (1, [f"skill validation failed ({len(errors)} issue(s)):",
-                    *(f"  - {error}" for error in errors), *notices])
+        return (
+            1,
+            [
+                f"skill validation failed ({len(errors)} issue(s)):",
+                *(f"  - {error}" for error in errors),
+                *notices,
+            ],
+        )
     if validated == 0:
-        return (2, ["no skills with a SKILL.md were validated — refusing to pass "
-                    "vacuously (is the checkout broken?)", *notices])
+        return (
+            2,
+            [
+                "no skills with a SKILL.md were validated — refusing to pass "
+                "vacuously (is the checkout broken?)",
+                *notices,
+            ],
+        )
     return (0, [f"OK: all {validated} skills valid (agentskills)", *notices])
 
 
