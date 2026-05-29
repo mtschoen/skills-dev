@@ -14,6 +14,14 @@ git clone --recursive <url>
 git submodule update --init --recursive
 ```
 
+After cloning, opt this clone into recursive submodule updates so a later `git pull` keeps submodule checkouts in lockstep with the pointers the umbrella records — otherwise the umbrella drifts into a "submodule behind recorded pointer" dirty state (`M <submodule> (new commits)`):
+
+```bash
+git config submodule.recurse true
+```
+
+This lives in `.git/config` and **cannot be committed**, so run it once per clone — including on every machine you work from. It does not cover `git clone` itself (hence `--recurse-submodules` above). Trade-off: `git pull` then checks submodules out at the recorded commit (detached HEAD); `scripts/pull-all.sh` re-attaches them to `main`.
+
 ## Installing skills
 
 `install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. The canonical source of truth is `~/.agents/skills/`, which **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills/)) both read natively as a global skills path. Two harnesses can't read it and so are kept as mirrors:

@@ -46,6 +46,8 @@ Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `eval
 - `scripts/push-all.{sh,bat}` — push every active submodule plus the umbrella to both `origin` (Gitea) and `github` (GitHub). Each push is pre-flighted: fetch the remote and classify local main vs remote/main as up-to-date / FF / behind / diverged. Non-FF states are reported with a clear reason ("behind by N", "DIVERGED: ahead N, behind M") and the push is skipped instead of failing with a generic line. Errors don't halt the run, but the script exits non-zero with a summary of all issues at the end.
 - `scripts/pull-all.{sh,bat}` — pull latest from Gitea on every submodule plus the umbrella.
 
+**Fresh-clone setup:** run `git config submodule.recurse true` once per clone (it can't be committed — `.git/config` is per-clone). Without it, pulling the umbrella advances the recorded submodule pointers but leaves local checkouts behind, producing the recurring `M <submodule> (new commits)` drift. See README "Cloning" for the trade-off (pulls then detach submodule HEADs; pull-all re-attaches to main).
+
 ## Specs and plans
 
 In-flight design specs live in `docs/superpowers/specs/` and implementation plans in `docs/superpowers/plans/`. Both are scaffolding — distilled into the plan header on spec→plan handoff, then deleted at branch-finish. Lasting design rationale folds into per-skill `SKILL.md` and `README.md` files.
