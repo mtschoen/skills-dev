@@ -186,6 +186,35 @@ confirm() {
     esac
 }
 
+# Translate `diff -rq STAGING DEST` output into a git-status-style preview,
+# stripping the absolute staging/dest prefixes (staging lives in a temp dir,
+# which reads like a bug otherwise) down to skill-relative paths:
+#   + path (new)                     shipped but not yet installed
+#   ~ path (changed)                 present in both, contents differ
+#   - path (removed, no longer shipped)  installed but no longer shipped
+format_diff() {
+    local staging="$1" dest="$2" line first rest dir name full
+    while IFS= read -r line; do
+        case "$line" in
+            "Files "*" differ")
+                first="${line#Files }"
+                first="${first%% and *}"
+                printf '  ~ %s (changed)\n' "${first#"$staging"/}"
+                ;;
+            "Only in "*)
+                rest="${line#Only in }"
+                dir="${rest%%: *}"
+                name="${rest#*: }"
+                full="$dir/$name"
+                case "$full" in
+                    "$staging"/*) printf '  + %s (new)\n' "${full#"$staging"/}" ;;
+                    "$dest"/*)    printf '  - %s (removed, no longer shipped)\n' "${full#"$dest"/}" ;;
+                esac
+                ;;
+        esac
+    done
+}
+
 install_skill_to_destination() {
     local name="$1" agent="$2" dest_root="$3"
     local src="$SRC_ROOT/$name"
@@ -219,9 +248,8 @@ install_skill_to_destination() {
     fi
 
     echo
-    echo "update $name -> $dest ($agent; 'Only in (shipped)'=add, 'Only in (installed)'=remove):"
-    printf '%s\n' "$diff_out" \
-        | sed -e "s#$staging#(shipped)#g" -e "s#$dest#(installed)#g" -e 's/^/  /'
+    echo "update $name -> $dest ($agent)"
+    printf '%s\n' "$diff_out" | format_diff "$staging" "$dest"
 
     if [ "$DRY_RUN" = 1 ]; then
         echo "  (dry-run; not applying)"

@@ -10,6 +10,8 @@ repo and stages the files — the installer enumerates shippable content via
 `git ls-files`, so a bare `.git` marker would stage nothing.
 """
 
+import subprocess
+
 from .conftest import run_install_script, make_skill
 
 
@@ -288,3 +290,43 @@ class TestOutputMessages:
         result = run_install_script(tmp_repo, "--fake")
         assert result.returncode == 2
         assert "unknown flag" in result.stderr
+
+
+class TestUpdatePreview:
+    """The update-an-already-installed-skill preview is rendered git-status
+    style (+ new / ~ changed / - removed) with skill-relative paths. The
+    clean tree is staged in a temp dir, but that absolute path must never
+    leak into the user-facing preview (it reads like a bug otherwise)."""
+
+    def test_update_preview_is_clean_and_symbolic(self, tmp_repo, tmp_path):
+        skill = make_skill(tmp_repo, "evolve", files={
+            "SKILL.md": "# evolve\nv1\n",
+            "references/keep.md": "keep\n",
+            "references/gone.md": "remove me\n",
+        })
+        env = home_with(tmp_path, ".claude")
+
+        # First install for real so the destination exists.
+        first = run_install_script(tmp_repo, "-y", "evolve", env_override=env)
+        assert first.returncode == 0
+        dest = tmp_path / ".claude" / "skills" / "evolve"
+        assert (dest / "references" / "gone.md").exists()
+
+        # Evolve the skill: change SKILL.md, add a file, drop gone.md.
+        (skill / "SKILL.md").write_text("# evolve\nv2 changed\n")
+        (skill / "references" / "added.md").write_text("added\n")
+        (skill / "references" / "gone.md").unlink()
+        subprocess.run(["git", "add", "-A"], cwd=skill, check=True,
+                       capture_output=True)
+
+        # Dry-run shows the diff preview without applying.
+        result = run_install_script(tmp_repo, "-n", "evolve", env_override=env)
+        assert result.returncode == 0
+        out = result.stdout
+        assert "~ SKILL.md (changed)" in out
+        assert "+ references/added.md (new)" in out
+        assert "- references/gone.md (removed, no longer shipped)" in out
+        # The keep.md file is unchanged, so it must not appear.
+        assert "keep.md" not in out
+        # The TEMP staging dir must never leak into the preview.
+        assert "skillinst" not in out

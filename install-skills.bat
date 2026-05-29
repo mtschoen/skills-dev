@@ -191,8 +191,8 @@ if !rc! equ 0 (
 )
 
 echo.
-echo update !n! -^> !dest! ^(!agent!, changes below; *EXTRA = removed^):
-for /f "usebackq delims=" %%L in ("!tmpout!") do echo   %%L
+echo update !n! -^> !dest! ^(!agent!^)
+for /f "usebackq delims=" %%L in ("!tmpout!") do call :fmt_line "!staging!" "!dest!" "%%L"
 del "!tmpout!" 2>nul
 
 if "!DRY_RUN!"=="1" (
@@ -211,6 +211,30 @@ if not exist "!dest_root!" mkdir "!dest_root!"
 robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
 echo   updated.
 rmdir /s /q "!staging!"
+exit /b 0
+
+:fmt_line
+rem %1=staging dir, %2=dest dir, %3=one raw robocopy /L line. Emit a
+rem git-status-style line (+ new / ~ changed / - removed) with the absolute
+rem prefix stripped to a skill-relative path. Robocopy /FP prints the staging
+rem (TEMP) path for source-side classes (New File/Newer/Older/Changed) and the
+rem dest path for *EXTRA File (dest-only -> would be removed by /MIR). Stripping
+rem the prefix keeps the TEMP staging dir out of the user-facing preview.
+set "_st=%~1"
+set "_de=%~2"
+set "_ln=%~3"
+set "_rel="
+set "_sym="
+set "_note="
+set "_after=!_ln:*%_st%\=!"
+if not "!_after!"=="!_ln!" (
+    set "_rel=!_after!"
+    if not "!_ln:New File=!"=="!_ln!" (set "_sym=+" & set "_note=new") else (set "_sym=~" & set "_note=changed")
+) else (
+    set "_after=!_ln:*%_de%\=!"
+    if not "!_after!"=="!_ln!" (set "_rel=!_after!" & set "_sym=-" & set "_note=removed, no longer shipped")
+)
+if defined _rel echo   !_sym! !_rel! ^(!_note!^)
 exit /b 0
 
 :build_staging
