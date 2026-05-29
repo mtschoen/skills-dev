@@ -19,7 +19,13 @@ coverage.xml
 .pytest_cache
 
 .maintenance.json
-.claude/
+
+# Ignore .claude/ contents (machine-specific settings, spikes, scratch
+# scripts) but track the shared lint hook + its config so the on-save gate
+# travels with the repo.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 
 # OS noise
 .DS_Store

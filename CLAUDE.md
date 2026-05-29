@@ -41,6 +41,18 @@ The detailed concrete steps (with current Gitea endpoints and Windows gotchas) l
 
 Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `evals/`, `README.md`, and `workspace/` (gitignored). The installer (`install-skills.{sh,bat}`) ships only **git-tracked** files (`git ls-files`), filtered to a **top-level allowlist**: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root (one entry per line, `#` comments). Shipping tracked-only means generated junk (`__pycache__`, `.pytest_cache`) can never leak; the allowlist means dev dirs (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`) are excluded by omission. Each install mirrors a clean staging tree into the destination, so files left by older installs are removed. Skill validation is delegated to the official Agent Skills validator: CI runs `agentskills validate` (pinned `skills-ref==0.1.1`) over every `.gitmodules` skill via `scripts/validate_skills.py`, which keeps the fleet-level anti-vacuous / WIP-skip guards; markdownlint covers skill prose.
 
+## Linting
+
+The umbrella has a lint gate over **umbrella-owned code only** — `scripts/` and `tests/` Python, plus the umbrella shell scripts. Each skill is its own submodule/repo and owns its own gate, so submodule trees are excluded (`pyproject.toml` `[tool.ruff] exclude`). The bar is **0 findings**; `TEST-REPORT.md` at the repo root records the current state. The validate-tier (authoritative) commands:
+
+```bash
+ruff check scripts/ tests/
+ruff format --check scripts/ tests/
+shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
+```
+
+CI runs these as the `ruff` + `shellcheck` jobs in `.gitea/workflows/lint.yml`. An on-save `PostToolUse` hook (`.claude/hooks/ruff_on_save.py`, wired in the tracked `.claude/settings.json`) lints `.py`/`.sh` files as they're edited — advisory, never blocking — and because sessions usually run from the umbrella, it lints submodule files too when you touch them. shellcheck is optional locally (CI installs it); install `shellcheck-py` via pip to run it on Windows. Ruff config lives in `pyproject.toml`; when adding a new submodule, add its dir to the `exclude` list there.
+
 ## Working across all submodules
 
 - `scripts/push-all.{sh,bat}` — push every active submodule plus the umbrella to both `origin` (Gitea) and `github` (GitHub). Each push is pre-flighted: fetch the remote and classify local main vs remote/main as up-to-date / FF / behind / diverged. Non-FF states are reported with a clear reason ("behind by N", "DIVERGED: ahead N, behind M") and the push is skipped instead of failing with a generic line. Errors don't halt the run, but the script exits non-zero with a summary of all issues at the end.
