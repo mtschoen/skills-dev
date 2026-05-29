@@ -10,7 +10,7 @@
 #
 # Run from anywhere; the script cd's to the repo root.
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 remotes=(origin)
 

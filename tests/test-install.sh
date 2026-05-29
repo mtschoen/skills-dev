@@ -12,9 +12,9 @@ FAILED=0
 
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1" >&2; FAILED=1; }
-assert_exists()    { [ -e "$2" ] && pass "$1" || fail "$1 (missing: $2)"; }
-assert_absent()    { [ ! -e "$2" ] && pass "$1" || fail "$1 (present: $2)"; }
-assert_contains()  { grep -q "$3" "$2" 2>/dev/null && pass "$1" || fail "$1"; }
+assert_exists()    { if [ -e "$2" ];   then pass "$1"; else fail "$1 (missing: $2)"; fi; }
+assert_absent()    { if [ ! -e "$2" ]; then pass "$1"; else fail "$1 (present: $2)"; fi; }
+assert_contains()  { if grep -q "$3" "$2" 2>/dev/null; then pass "$1"; else fail "$1"; fi; }
 
 # --- build the synthetic skill fixture ------------------------------------
 build_fixture() {
