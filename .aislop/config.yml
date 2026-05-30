@@ -1,0 +1,34 @@
+# aislop configuration — https://github.com/scanaislop/aislop
+# Project-scoped quality gate for the skills-dev umbrella. Scoped to
+# umbrella-owned code only (scripts/, tests/, .claude/); each skill is its own
+# submodule/repo and owns its own gate, so submodules are out of scope here —
+# consistent with the ruff/shellcheck scope in pyproject.toml. The PostToolUse
+# hook still scans submodule files when edited from an umbrella session
+# (advisory); `aislop ci` stays scoped to the include list below.
+
+# Minimum score (0-100) required to pass `aislop ci`.
+threshold: 100
+
+# Umbrella-owned code only.
+include:
+  - scripts
+  - tests
+  - .claude
+
+# Generated/vendored trees never scanned.
+exclude:
+  - node_modules
+  - dist
+  - build
+  - .git
+  - "*/workspace"
+
+# Python formatting + linting are owned by the dedicated, version-pinned ruff
+# gate (pyproject.toml + the ruff CI job). aislop bundles its own ruff, which
+# disagrees with ours on shebang/docstring spacing — letting both police ruff
+# causes mutually-incompatible reformatting. So disable aislop's ruff
+# passthrough here; aislop keeps its unique value (AI-slop, code-quality,
+# security engines).
+disabled_rules:
+  - python-formatting
+  - python-linting

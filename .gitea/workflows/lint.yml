@@ -62,3 +62,20 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: shellcheck
         run: shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
+
+  aislop:
+    # AI-slop / code-quality / security gate over umbrella-owned code. Pinned
+    # to a known release (pre-1.0; unpinned npx could change rules and break the
+    # gate). Scope + threshold (score 100) come from .aislop/config.yml. ruff
+    # format/lint passthrough is disabled there — the dedicated ruff job owns
+    # Python formatting/linting (the two bundled ruffs disagree on shebang
+    # spacing). `aislop ci` exits non-zero below threshold.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: aislop ci (score 100 gate)
+        run: npx -y aislop@0.9.4 ci

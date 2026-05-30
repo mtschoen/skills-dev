@@ -49,9 +49,12 @@ The umbrella has a lint gate over **umbrella-owned code only** — `scripts/` an
 ruff check scripts/ tests/
 ruff format --check scripts/ tests/
 shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
+npx -y aislop@0.9.4 ci          # AI-slop/code-quality/security, score-100 gate
 ```
 
-CI runs these as the `ruff` + `shellcheck` jobs in `.gitea/workflows/lint.yml`. An on-save `PostToolUse` hook (`.claude/hooks/ruff_on_save.py`, wired in the tracked `.claude/settings.json`) lints `.py`/`.sh` files as they're edited — advisory, never blocking — and because sessions usually run from the umbrella, it lints submodule files too when you touch them. shellcheck is optional locally (CI installs it); install `shellcheck-py` via pip to run it on Windows. Ruff config lives in `pyproject.toml`; when adding a new submodule, add its dir to the `exclude` list there.
+CI runs these as the `ruff`, `shellcheck`, and `aislop` jobs in `.gitea/workflows/lint.yml`. An on-save `PostToolUse` hook (`.claude/hooks/ruff_on_save.py` for ruff/shellcheck, plus `aislop hook claude`, both wired in the tracked `.claude/settings.json`) lints files as they're edited — advisory, never blocking — and because sessions usually run from the umbrella, it covers submodule files too when you touch them. shellcheck is optional locally (CI installs it); install `shellcheck-py` via pip to run it on Windows. Ruff config lives in `pyproject.toml`; when adding a new submodule, add its dir to the `exclude` list there.
+
+**aislop** ([scanaislop/aislop](https://github.com/scanaislop/aislop)) is a project-scoped quality gate (`.aislop/config.yml`, `threshold: 100`, scoped to `scripts`/`tests`/`.claude`). It's wired **manually and pinned** — do **not** run `aislop hook install` (its default is a *global* install that rewrites `~/.claude/settings.json` and appends to your global `CLAUDE.md`; even `--project` writes an `AISLOP.md` + CLAUDE.md import). aislop's `python-formatting`/`python-linting` rules are disabled in the config because aislop bundles its own ruff that disagrees with ours on shebang spacing — the dedicated `ruff` job/hook owns Python format+lint; aislop owns AI-slop, code-quality, and security. Pin the version everywhere (`aislop@0.9.4`); it's pre-1.0.
 
 ## Working across all submodules
 
