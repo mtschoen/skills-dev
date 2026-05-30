@@ -1,34 +1,61 @@
 # aislop configuration — https://github.com/scanaislop/aislop
-# Project-scoped quality gate for the skills-dev umbrella. Scoped to
-# umbrella-owned code only (scripts/, tests/, .claude/); each skill is its own
-# submodule/repo and owns its own gate, so submodules are out of scope here —
-# consistent with the ruff/shellcheck scope in pyproject.toml. The PostToolUse
-# hook still scans submodule files when edited from an umbrella session
-# (advisory); `aislop ci` stays scoped to the include list below.
+# Project-scoped quality gate for the skills-dev umbrella. Scope is
+# umbrella-owned code only; each skill is its own submodule/repo and owns its
+# own gate, so every submodule dir is excluded below (consistent with the ruff
+# scope in pyproject.toml). The PostToolUse hook still scans submodule files
+# when edited from an umbrella session (advisory); `aislop ci` is bounded by
+# these excludes.
 
-# Minimum score (0-100) required to pass `aislop ci`.
-threshold: 100
+version: 1
 
-# Umbrella-owned code only.
-include:
-  - scripts
-  - tests
-  - .claude
+# format + lint are owned by the dedicated, version-pinned ruff gate
+# (pyproject.toml + the ruff CI job). aislop bundles its own ruff that disagrees
+# with ours on shebang/docstring spacing, so letting both police ruff causes
+# mutually-incompatible reformatting. Disable aislop's ruff passthrough; aislop
+# keeps its unique value (code-quality, ai-slop, architecture, security).
+engines:
+  format: false
+  lint: false
+  code-quality: true
+  ai-slop: true
+  architecture: true
+  security: true
 
-# Generated/vendored trees never scanned.
+lint:
+  typecheck: false
+
+ci:
+  # The gate. Score below this -> non-zero exit. The bar is 100, matching the
+  # ruff/shellcheck 0-findings bar. Verified fail-closed: a single AI-slop
+  # finding drops the score below 100 and `aislop ci` exits non-zero.
+  failBelow: 100
+  format: json
+
+# No phoning home.
+telemetry:
+  enabled: false
+
+# Generated trees + every submodule (keep in sync with .gitmodules).
 exclude:
   - node_modules
   - dist
   - build
   - .git
-  - "*/workspace"
-
-# Python formatting + linting are owned by the dedicated, version-pinned ruff
-# gate (pyproject.toml + the ruff CI job). aislop bundles its own ruff, which
-# disagrees with ours on shebang/docstring spacing — letting both police ruff
-# causes mutually-incompatible reformatting. So disable aislop's ruff
-# passthrough here; aislop keeps its unique value (AI-slop, code-quality,
-# security engines).
-disabled_rules:
-  - python-formatting
-  - python-linting
+  - "**/workspace/**"
+  - capture-idea/**
+  - cost-estimator/**
+  - escalate-over-shortcut/**
+  - fast-tests/**
+  - find-task/**
+  - fleet-orchestration/**
+  - maintaining-full-coverage/**
+  - progress-beacon/**
+  - project-maintenance/**
+  - pushback/**
+  - reconcile-tasks/**
+  - remote-claude/**
+  - review-in-parallel-pipelines/**
+  - running-spikes/**
+  - smoke-test/**
+  - unity-batchmode-worktree/**
+  - wrap/**

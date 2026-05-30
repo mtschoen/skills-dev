@@ -8,9 +8,11 @@ Git:      0320294 (lint-rollout — shellcheck fixes)
 Lint:     ruff 0.15.15:   0 findings   (ruff check scripts/ tests/)
           ruff format:    0 to reformat (ruff format --check scripts/ tests/)
           shellcheck 0.11: 0 findings   (scripts/*.sh install-skills.sh tests/test-install.sh)
-          aislop 0.9.4:   100/100 score, 0 issues (npx aislop ci; threshold 100)
-                          ruff passthrough (python-formatting/-linting) disabled
-                          in .aislop/config.yml — owned by the ruff gate above.
+          aislop 0.9.4:   100/100 score, 0 issues, 2 files (npx aislop ci)
+                          ci.failBelow 100 — fail-closed verified (umbrella slop
+                          -> 91 -> exit 1; clean -> 100 -> exit 0; submodule slop
+                          ignored). format+lint engines off (ruff owns those);
+                          telemetry off.
           0 per-case suppressions
           0 documented exceptions
 
