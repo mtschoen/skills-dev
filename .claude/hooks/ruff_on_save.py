@@ -34,9 +34,7 @@ def lint(file_path):
         shellcheck = shutil.which("shellcheck")
         if not shellcheck:
             return None
-        result = subprocess.run(
-            [shellcheck, file_path], capture_output=True, text=True
-        )
+        result = subprocess.run([shellcheck, file_path], capture_output=True, text=True)
         out = (result.stdout + result.stderr).strip()
         return ("shellcheck", out) if out and result.returncode != 0 else None
     return None
