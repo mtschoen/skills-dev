@@ -28,6 +28,7 @@ exclude = [
     "pushback/**",
     "reconcile-tasks/**",
     "remote-claude/**",
+    "research-first/**",
     "review-in-parallel-pipelines/**",
     "running-spikes/**",
     "smoke-test/**",
