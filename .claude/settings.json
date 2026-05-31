@@ -10,7 +10,7 @@
           },
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npx -y aislop@0.9.4 hook claude"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/aislop_on_save.py\""
           }
         ]
       }
