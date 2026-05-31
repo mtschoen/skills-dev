@@ -24,6 +24,7 @@ exclude = [
     "maintaining-full-coverage/**",
     "progress-beacon/**",
     "project-maintenance/**",
+    "promote-project/**",
     "pushback/**",
     "reconcile-tasks/**",
     "remote-claude/**",
