@@ -47,7 +47,9 @@ def load(recent=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Aggregate on-save hook timing.")
-    parser.add_argument("--recent", type=int, metavar="N", help="only the last N samples")
+    parser.add_argument(
+        "--recent", type=int, metavar="N", help="only the last N samples"
+    )
     parser.add_argument("--reset", action="store_true", help="truncate the timing log")
     args = parser.parse_args()
 

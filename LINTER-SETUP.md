@@ -4,7 +4,7 @@ Recommended linting setup for skills-dev — fleet survey 2026-05-29.
 
 ## Current state
 
-**Languages detected**
+### Languages detected
 
 | Language | Where | Count (approx) |
 |---|---|---|
@@ -14,9 +14,9 @@ Recommended linting setup for skills-dev — fleet survey 2026-05-29.
 
 No root-level `pyproject.toml` (individual eval scaffolds have their own). No `.editorconfig` at repo root. No `.pre-commit-config.yaml`. No Gitea Actions / GitHub Actions CI. No Claude Code `PostToolUse` hook in `.claude/settings.json` (file does not exist).
 
-**Baseline finding count (ruff, canonical sources only)**
+### Baseline finding count (ruff, canonical sources only)
 
-```
+```text
 ruff check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ remote-claude/references/
 Found 11 errors. [*] 2 fixable with --fix.
 ```
@@ -111,7 +111,7 @@ Paste into `.claude/settings.json` under `hooks.PostToolUse`:
 
 For shell files, extend the `case` to also run shellcheck (once installed):
 
-```
+```bash
 *.sh) o=$(shellcheck "$f" 2>/dev/null); [ -n "$o" ] && jq -n --arg c "shellcheck:\n$o" '{...}';;
 ```
 
@@ -172,7 +172,7 @@ The `workspace/` and `evals/workspace/` trees should be excluded permanently (se
 
 ## AI-slop gate (aislop)
 
-**aislop** (https://github.com/scanaislop/aislop · MIT CLI · Node >= 20) is a
+**aislop** (<https://github.com/scanaislop/aislop> · MIT CLI · Node >= 20) is a
 language-agnostic AI-slop quality gate — deterministic (no LLM), 40+ rules,
 scored 0–100 — that flags agent slop: narrative/trivial comments, swallowed
 exceptions, dead code, unused/hallucinated imports, `as any`, innerHTML sinks,
@@ -185,7 +185,7 @@ only scores the Python surface.
 
 ### Per-edit (① on-save)
 
-```
+```bash
 aislop hook install --claude --project
 ```
 
@@ -239,7 +239,7 @@ but no per-rule config in version 0.9.4.
   nothing else wrong), exclude those files or defer gating until per-rule config
   lands in a later version.
 
-### Rollout
+### aislop rollout
 
 Clean up first, then gate — don't ratchet from a noisy baseline. Run
 `npx aislop@0.9.4 scan . -d` to assess the current score, exclude the generated
