@@ -31,9 +31,9 @@
 [submodule "capture-idea"]
 	path = capture-idea
 	url = ../skills-capture-idea.git
-[submodule "escalate-over-improvise"]
-	path = escalate-over-improvise
-	url = ../skills-escalate-over-improvise.git
+[submodule "escalate-over-shortcut"]
+	path = escalate-over-shortcut
+	url = ../skills-escalate-over-shortcut.git
 [submodule "fast-tests"]
 	path = fast-tests
 	url = ../skills-fast-tests.git
@@ -46,3 +46,12 @@
 [submodule "running-spikes"]
 	path = running-spikes
 	url = ../skills-running-spikes.git
+[submodule "progress-beacon"]
+	path = progress-beacon
+	url = ../skills-progress-beacon.git
+[submodule "promote-project"]
+	path = promote-project
+	url = ../skills-promote-project.git
+[submodule "research-first"]
+	path = research-first
+	url = ../skills-research-first.git

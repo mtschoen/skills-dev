@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Validate every skill's SKILL.md using the official Agent Skills validator.
+
+Each top-level submodule in this repo is a skill with a SKILL.md at its root
+(root layout). Per-skill validation is delegated to `agentskills validate`
+(the console script from the pinned `skills-ref` PyPI package), which strict-
+parses the YAML frontmatter and enforces the spec's naming/field rules.
+
+This module keeps only the *fleet* logic the per-skill validator can't know:
+
+  - the set of skills comes from `.gitmodules`, not from disk, so a broken
+    recursive checkout can't pass vacuously;
+  - empty/missing dir        -> ERROR (broken checkout);
+  - content but no SKILL.md  -> SKIPPED (a WIP submodule, not a skill yet);
+  - has a SKILL.md           -> handed to `agentskills validate`.
+
+Exit codes: 0 = all valid, 1 = validation errors, 2 = nothing validated.
+
+Run from anywhere:  python scripts/validate_skills.py
+"""
+
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+_PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
+
+
+def parse_submodule_paths(gitmodules_text):
+    """Return the ordered list of submodule paths declared in a .gitmodules file."""
+    return _PATH_LINE.findall(gitmodules_text)
+
+
+def find_skill_md(skill_dir: Path):
+    """Return the root SKILL.md for a skill dir, or None if absent."""
+    candidate = skill_dir / "SKILL.md"
+    return candidate if candidate.is_file() else None
+
+
+def has_content(skill_dir: Path):
+    """True if the dir holds any file other than .git (i.e. it checked out)."""
+    if not skill_dir.is_dir():
+        return False
+    return any(entry.name != ".git" for entry in skill_dir.iterdir())
+
+
+def run_agentskills(skill_dir: Path):
+    """Validate one skill dir with `agentskills validate`. Returns (exit_code, output).
+
+    Raises RuntimeError if the `agentskills` console script isn't on PATH — a
+    missing validator must fail loudly, never silently pass.
+    """
+    executable = shutil.which("agentskills")
+    if executable is None:
+        raise RuntimeError(
+            "the 'agentskills' command was not found on PATH; "
+            "install it with `pip install skills-ref==0.1.1`"
+        )
+    completed = subprocess.run(
+        [executable, "validate", str(skill_dir)],
+        capture_output=True,
+        text=True,
+    )
+    return (completed.returncode, (completed.stdout + completed.stderr).strip())
+
+
+def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
+    """Validate one skill. Returns a list of error strings ([] if clean or skipped).
+
+    `runner(skill_dir) -> (exit_code, output)` is injected so the fleet logic is
+    unit-testable without the real validator installed.
+    """
+    skill_dir = repo_root / path
+    if find_skill_md(skill_dir) is None:
+        if has_content(skill_dir):
+            return []  # WIP submodule, not an authored skill yet — skip, not an error
+        return [f"{path}: empty submodule dir, no SKILL.md — checkout looks broken"]
+
+    code, output = runner(skill_dir)
+    if code == 0:
+        return []
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if lines:
+        return [f"{path}: {line}" for line in lines]
+    return [f"{path}: skills-ref reported invalid (exit {code})"]
+
+
+def validate_repo(repo_root: Path, runner=run_agentskills):
+    """Validate every skill declared in .gitmodules.
+
+    Returns (errors, validated_count, skipped) where validated_count is the
+    number of submodules that had a SKILL.md, and skipped lists WIP submodules.
+    """
+    gitmodules = repo_root / ".gitmodules"
+    if not gitmodules.is_file():
+        return ([f"{repo_root}: no .gitmodules file found"], 0, [])
+
+    paths = parse_submodule_paths(gitmodules.read_text(encoding="utf-8"))
+    errors = []
+    validated = 0
+    skipped = []
+    for path in paths:
+        skill_errors = validate_skill(repo_root, path, runner=runner)
+        if find_skill_md(repo_root / path) is not None:
+            validated += 1
+        elif not skill_errors:
+            skipped.append(path)
+        errors.extend(skill_errors)
+    return (errors, validated, skipped)
+
+
+def evaluate(repo_root: Path, runner=run_agentskills):
+    """Run validation and return (exit_code, output_lines)."""
+    errors, validated, skipped = validate_repo(repo_root, runner=runner)
+    notices = [
+        f"note: skipped {name} (submodule has no SKILL.md yet)" for name in skipped
+    ]
+    if errors:
+        return (
+            1,
+            [
+                f"skill validation failed ({len(errors)} issue(s)):",
+                *(f"  - {error}" for error in errors),
+                *notices,
+            ],
+        )
+    if validated == 0:
+        return (
+            2,
+            [
+                "no skills with a SKILL.md were validated — refusing to pass "
+                "vacuously (is the checkout broken?)",
+                *notices,
+            ],
+        )
+    return (0, [f"OK: all {validated} skills valid (agentskills)", *notices])
+
+
+def main():
+    repo_root = Path(__file__).resolve().parent.parent
+    code, lines = evaluate(repo_root)
+    print("\n".join(lines))
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    main()

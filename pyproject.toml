@@ -1,0 +1,48 @@
+# Ruff configuration for the skills-dev umbrella.
+#
+# Scope: this gate lints UMBRELLA-OWNED Python only (scripts/, tests/). Each
+# skill is its own git submodule / repo and owns its own lint gate, so the
+# submodule directories are excluded here. The validate command and CI use
+# explicit paths (`ruff check scripts/ tests/`) so adding a new submodule can
+# never silently break the umbrella's CI; the submodule excludes below are a
+# defensive measure so a manual `ruff check .` from the repo root does not walk
+# into submodule trees. Keep the submodule list in sync with .gitmodules.
+
+[tool.ruff]
+exclude = [
+    # Generated eval runs and workspace fixtures — not authored code.
+    "*/workspace/**",
+    "*/evals/scenarios/**/workspace/**",
+    "smoke-test/evals/fixtures/node-api/node_modules/**",
+    # Submodules — each is a separate repo with its own lint gate (see .gitmodules).
+    "capture-idea/**",
+    "cost-estimator/**",
+    "escalate-over-shortcut/**",
+    "fast-tests/**",
+    "find-task/**",
+    "fleet-orchestration/**",
+    "maintaining-full-coverage/**",
+    "progress-beacon/**",
+    "project-maintenance/**",
+    "promote-project/**",
+    "pushback/**",
+    "reconcile-tasks/**",
+    "remote-claude/**",
+    "research-first/**",
+    "review-in-parallel-pipelines/**",
+    "running-spikes/**",
+    "smoke-test/**",
+    "unity-batchmode-worktree/**",
+    "wrap/**",
+]
+
+[tool.ruff.lint]
+select = ["F", "I", "B", "UP", "SIM", "RET", "PIE", "C4", "W", "RUF", "E741"]
+# E501 (line too long) left out — markdown-embedded commands run long.
+# E402 left out — scripts sometimes have late imports after __main__ guards.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["RUF012", "RUF043", "SIM117", "B017", "SIM115"]
+# Eval scaffold — generated, not enforced (applies when the on-save hook lints
+# a submodule eval file, since those resolve config up to this file).
+"**/evals/**" = ["F401", "F811", "E741"]

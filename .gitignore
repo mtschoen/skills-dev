@@ -5,8 +5,31 @@ test-sandbox/
 # Captured subagent transcripts that may contain absolute paths or noise
 **/tests/results/scratch/
 
+# Python bytecode
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Test coverage artifacts
+.coverage
+**/.coverage
+coverage.xml
+**/coverage.xml
+.pytest_cache
+
 .maintenance.json
-.claude/
+
+# Ignore .claude/ contents (machine-specific settings, spikes, scratch
+# scripts) but track the shared lint hook + its config so the on-save gate
+# travels with the repo.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+
+# aislop runtime artifacts (session log, caches) — keep only the config.
+.aislop/*
+!.aislop/config.yml
 
 # OS noise
 .DS_Store

@@ -1,0 +1,85 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  markdown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: DavidAnson/markdownlint-cli2-action@v23
+
+  validate-skills:
+    # Validate every skill's SKILL.md with the official Agent Skills validator
+    # (agentskills, from the pinned skills-ref package). Catches strict-YAML
+    # parse failures (apostrophe-in-single-quote, flattened block scalar) plus
+    # the spec's naming/field rules. Needs submodules checked out.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install skills-ref==0.1.1
+      - name: Validate every skill with agentskills
+        run: python scripts/validate_skills.py
+
+  ruff:
+    # Lint + format-check umbrella-owned Python only (scripts/, tests/). Each
+    # skill submodule owns its own gate, so submodules are not checked out and
+    # the paths are scoped explicitly (config: pyproject.toml). Zero findings
+    # is the bar — see TEST-REPORT.md.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install ruff==0.15.15
+      - name: ruff check
+        run: ruff check scripts/ tests/
+      - name: ruff format --check
+        run: ruff format --check scripts/ tests/
+
+  shellcheck:
+    # Lint umbrella-owned shell scripts only (submodule hooks own their gates).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: shellcheck
+        run: shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
+
+  aislop:
+    # AI-slop / code-quality / security gate over umbrella-owned code. Pinned
+    # to a known release (pre-1.0; unpinned npx could change rules and break the
+    # gate). Scope + threshold (score 100) come from .aislop/config.yml. ruff
+    # format/lint passthrough is disabled there — the dedicated ruff job owns
+    # Python formatting/linting (the two bundled ruffs disagree on shebang
+    # spacing). `aislop ci` exits non-zero below threshold.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: aislop ci (score 100 gate)
+        # Fork build @schoen/aislop (C#/roslynator + newer rules) from the Gitea
+        # npm registry (see .npmrc); self-signed cert via NODE_EXTRA_CA_CERTS.
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/.gitea-ca.pem
+        run: npx -y @schoen/aislop@0.10.1 ci
