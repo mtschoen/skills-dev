@@ -49,3 +49,9 @@
 [submodule "progress-beacon"]
 	path = progress-beacon
 	url = ../skills-progress-beacon.git
+[submodule "promote-project"]
+	path = promote-project
+	url = ../skills-promote-project.git
+[submodule "research-first"]
+	path = research-first
+	url = ../skills-research-first.git
