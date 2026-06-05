@@ -48,11 +48,11 @@ Supported destination flags:
 | `--gemini` | `~/.gemini/skills` (Antigravity's global skills dir) |
 | `--all` | all of the above |
 
-Each skill directory either has `SKILL.md` at its root (new layout) or a `skill-draft/` subdirectory (legacy layout). The installer detects which and copies the right content; dev-only files (`evals/`, `docs/`, `README.md`, `.gitea/`, `.markdownlint-cli2.jsonc`, etc.) are excluded for the root layout.
+Each skill repo has `SKILL.md` at its root. The installer ships only **git-tracked** files, filtered to a top-level allowlist: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root. Dev-only content (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.) is excluded by omission, and generated junk can never leak because untracked files are never shipped.
 
 ## Working across all submodules
 
-`scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo and push/pull against `origin` by default. Pass `--remote <name>` to also push/pull another remote where it exists. Errors print inline and don't halt the run.
+`scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo. push-all pushes to both `origin` (Gitea) and `github` (GitHub) by default; pull-all fetches + fast-forwards from `origin` only. Either accepts `--remote <name>` to add another remote where it exists. Each push is pre-flighted (fetch + classify local vs remote as up-to-date / fast-forward / behind / diverged), and non-fast-forward states are reported and skipped. Errors print inline and don't halt the run, but the script exits non-zero with a summary.
 
 ```bash
 ./scripts/pull-all.sh
