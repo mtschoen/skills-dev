@@ -79,12 +79,23 @@ if "!DEFAULT_MODE!"=="1" if "!DEST_COUNT!"=="0" (
 
 set "BASELINE= SKILL.md scripts references assets "
 
+set "FOUND=0"
 for /d %%D in ("%SRC_ROOT%\*") do (
     if not "!ABORT!"=="1" (
         set "name=%%~nxD"
         set "src=%%~fD"
-        if exist "!src!\.git" call :maybe_install "!name!" "!src!"
+        if exist "!src!\.git" (
+            set /a FOUND+=1
+            call :maybe_install "!name!" "!src!"
+        )
     )
+)
+
+if "!FOUND!"=="0" (
+    echo warning: no skill submodules found under %SRC_ROOT%. 1>&2
+    echo          did you forget to run 'git submodule update --init --recursive'? 1>&2
+    endlocal
+    exit /b 1
 )
 
 if "!ABORT!"=="1" (

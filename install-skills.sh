@@ -276,13 +276,21 @@ install_skill() {
     done
 }
 
+found=0
 for src in "$SRC_ROOT"/*/; do
     [ "$ABORT" = 1 ] && break
     name="$(basename "$src")"
     [ -e "$src/.git" ] || continue       # only git submodules / repos
+    found=$((found + 1))
     is_selected "$name" || continue
     install_skill "$name"
 done
+
+if [ "$found" = 0 ]; then
+    echo "warning: no skill submodules found under $SRC_ROOT." >&2
+    echo "         did you forget to run 'git submodule update --init --recursive'?" >&2
+    exit 1
+fi
 
 if [ "$ABORT" = 1 ]; then
     echo
