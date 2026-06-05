@@ -44,6 +44,7 @@ exclude:
   - "**/workspace/**"
   - capture-idea/**
   - cost-estimator/**
+  - docs-update/**
   - escalate-over-shortcut/**
   - fast-tests/**
   - find-task/**
