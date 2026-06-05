@@ -10,7 +10,7 @@ The workflow:
 
 1. Author the skill content locally in a temporary `<name>/` directory inside skills-dev.
 2. Create the remote repos:
-   - Gitea: `schoen/skills-<name>` (private). Owned by `schoen`, so use `~/.gitea-token` (admin) — `~/.gitea-token-claude` can't create under another user's namespace.
+   - Gitea: `schoen/skills-<name>` (**public** — umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs; the run token only covers skills-dev itself). Owned by `schoen`, so use `~/.gitea-token` (admin) — `~/.gitea-token-claude` can't create under another user's namespace. Also enable the Actions unit if the repo gets CI (`PATCH {"has_actions": true}` — disabled by default on API-created repos).
    - GitHub: `mtschoen/skills-<name>` (public). Use `gh repo create`.
 3. Init the local dir as git, commit, push to Gitea. (Use the default Matt Schoen git identity — the global CLAUDE.md's bot-identity pattern is only for PRs where Gitea's self-approval block matters, not for direct main-branch commits.)
 4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
