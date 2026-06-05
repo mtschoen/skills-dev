@@ -55,3 +55,6 @@
 [submodule "research-first"]
 	path = research-first
 	url = ../skills-research-first.git
+[submodule "docs-update"]
+	url = ../skills-docs-update.git
+	path = docs-update

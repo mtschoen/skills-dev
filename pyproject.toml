@@ -17,6 +17,7 @@ exclude = [
     # Submodules — each is a separate repo with its own lint gate (see .gitmodules).
     "capture-idea/**",
     "cost-estimator/**",
+    "docs-update/**",
     "escalate-over-shortcut/**",
     "fast-tests/**",
     "find-task/**",
