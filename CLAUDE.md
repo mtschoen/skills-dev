@@ -27,7 +27,7 @@ The workflow:
 8. Commit the submodule pointer in skills-dev.
 9. Run `scripts/push-all.{sh,bat}` to push both hosts.
 
-The detailed concrete steps (with current Gitea endpoints and Windows gotchas) live at `~/.claude/projects/C--Users-mtsch-skills-dev/memory/reference_gitea_submodule_workflow.md`. Read that for the API tokens and curl commands; the user's global CLAUDE.md (`Gitea (self-hosted)` section) is authoritative for current state since the memory note may predate URL/token changes.
+The detailed concrete steps (current Gitea endpoints, API tokens, curl commands, Windows gotchas) live in the auto-loaded project memory - see the "gitea submodule workflow" entry in its MEMORY.md index. The user's global CLAUDE.md (`Gitea (self-hosted)` section) is authoritative for current state since the memory note may predate URL/token changes.
 
 ## Naming conventions
 
@@ -39,7 +39,7 @@ The detailed concrete steps (with current Gitea endpoints and Windows gotchas) l
 
 ## Layout
 
-Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `evals/`, `README.md`, and `workspace/` (gitignored). The installer (`install-skills.{sh,bat}`) ships only **git-tracked** files (`git ls-files`), filtered to a **top-level allowlist**: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root (one entry per line, `#` comments). Shipping tracked-only means generated junk (`__pycache__`, `.pytest_cache`) can never leak; the allowlist means dev dirs (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`) are excluded by omission. Each install mirrors a clean staging tree into the destination, so files left by older installs are removed. Skill validation is delegated to the official Agent Skills validator: CI runs `agentskills validate` (pinned `skills-ref==0.1.1`) over every `.gitmodules` skill via `scripts/validate_skills.py`, which keeps the fleet-level anti-vacuous / WIP-skip guards; markdownlint covers skill prose.
+Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `evals/`, `README.md`, and `workspace/` (gitignored). The installer (`install-skills.{sh,bat}`) ships only **git-tracked** files (`git ls-files`), filtered to a **top-level allowlist**: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root (one entry per line, `#` comments). Shipping tracked-only means generated junk (`__pycache__`, `.pytest_cache`) can never leak; the allowlist means dev dirs (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`) are excluded by omission. Each install mirrors a clean staging tree into the destination, so files left by older installs are removed. Skill validation is delegated to the official Agent Skills validator: CI runs `agentskills validate` (pinned `skills-ref==0.1.1`) over every `.gitmodules` skill via `scripts/validate_skills.py`, which keeps the fleet-level anti-vacuous / WIP-skip guards plus a portability guard (no tracked file in the umbrella or any skill - dev files included - may reference local-only paths such as user memory notes or machine-specific home dirs; deny patterns and exemptions live in `validate_skills.py`); markdownlint covers skill prose.
 
 ## Linting
 

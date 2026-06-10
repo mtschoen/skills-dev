@@ -12,7 +12,10 @@ This module keeps only the *fleet* logic the per-skill validator can't know:
     recursive checkout can't pass vacuously;
   - empty/missing dir        -> ERROR (broken checkout);
   - content but no SKILL.md  -> SKIPPED (a WIP submodule, not a skill yet);
-  - has a SKILL.md           -> handed to `agentskills validate`.
+  - has a SKILL.md           -> handed to `agentskills validate`;
+  - no tracked file (in the umbrella or any skill, dev files included)
+    may reference local-only paths (user memory notes, machine-specific
+    home directories) that do not travel with the repo.
 
 Exit codes: 0 = all valid, 1 = validation errors, 2 = nothing validated.
 
@@ -26,6 +29,78 @@ import sys
 from pathlib import Path
 
 _PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
+
+# Paths that exist only on the author's machines; tracked content may not
+# reference them (internalize the content or drop the reference).
+_PORTABILITY_RULES = (
+    ("user memory note (~/.claude/notes/)", re.compile(r"\.claude[/\\]notes")),
+    ("personal repo path", re.compile(r"~[/\\]schoen-claude-status")),
+    (
+        "machine-specific home path",
+        re.compile(r"/home/schoen|C:[/\\]Users[/\\]mtsch|(?<![A-Za-z0-9])Y:\\"),
+    ),
+)
+
+_PORTABILITY_EXEMPTIONS = {
+    # running-spikes stores the spike notes it writes under ~/.claude/notes.
+    "running-spikes": {"user memory note (~/.claude/notes/)"},
+}
+
+# These define and test the deny patterns, so they contain them literally.
+_PORTABILITY_FILE_EXEMPTIONS = {
+    "scripts/validate_skills.py",
+    "tests/test_validate_skills.py",
+}
+
+# Fallback-walk skip list for directories git would not track anyway.
+_SCAN_SKIP_DIRECTORIES = {
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    "node_modules",
+    "workspace",
+    "smoke-test-workspace",
+}
+
+
+def tracked_files(directory: Path):
+    """Yield git-tracked files under *directory* (full walk if not a repo)."""
+    listing = subprocess.run(
+        ["git", "-C", str(directory), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+    )
+    if listing.returncode == 0:
+        for name in listing.stdout.split("\0"):
+            candidate = directory / name
+            if name and candidate.is_file():
+                yield candidate
+        return
+    for candidate in sorted(directory.rglob("*")):
+        relative_parts = candidate.relative_to(directory).parts
+        if candidate.is_file() and not _SCAN_SKIP_DIRECTORIES.intersection(
+            relative_parts
+        ):
+            yield candidate
+
+
+def check_portability(repo_root: Path, path: str):
+    """Return error strings for local-only path references in tracked files."""
+    exempt_labels = _PORTABILITY_EXEMPTIONS.get(path, set())
+    errors = []
+    for tracked in tracked_files(repo_root / path):
+        relative = tracked.relative_to(repo_root).as_posix()
+        if relative in _PORTABILITY_FILE_EXEMPTIONS:
+            continue
+        text = tracked.read_text(encoding="utf-8", errors="replace")
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for label, pattern in _PORTABILITY_RULES:
+                if label not in exempt_labels and pattern.search(line):
+                    errors.append(
+                        f"{relative}:{line_number}: references a {label} "
+                        "that does not travel with the repo"
+                    )
+    return errors
 
 
 def parse_submodule_paths(gitmodules_text):
@@ -78,13 +153,16 @@ def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
             return []  # WIP submodule, not an authored skill yet — skip, not an error
         return [f"{path}: empty submodule dir, no SKILL.md — checkout looks broken"]
 
+    errors = []
     code, output = runner(skill_dir)
-    if code == 0:
-        return []
-    lines = [line.strip() for line in output.splitlines() if line.strip()]
-    if lines:
-        return [f"{path}: {line}" for line in lines]
-    return [f"{path}: skills-ref reported invalid (exit {code})"]
+    if code != 0:
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if lines:
+            errors.extend(f"{path}: {line}" for line in lines)
+        else:
+            errors.append(f"{path}: skills-ref reported invalid (exit {code})")
+    errors.extend(check_portability(repo_root, path))
+    return errors
 
 
 def validate_repo(repo_root: Path, runner=run_agentskills):
@@ -98,7 +176,7 @@ def validate_repo(repo_root: Path, runner=run_agentskills):
         return ([f"{repo_root}: no .gitmodules file found"], 0, [])
 
     paths = parse_submodule_paths(gitmodules.read_text(encoding="utf-8"))
-    errors = []
+    errors = list(check_portability(repo_root, "."))
     validated = 0
     skipped = []
     for path in paths:

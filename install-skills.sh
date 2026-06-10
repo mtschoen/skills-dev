@@ -8,9 +8,9 @@
 # Shipping tracked files only means generated junk (e.g. __pycache__) can never
 # leak from source. Each install is a true mirror of a clean staging tree, so
 # files left in the destination by older installs are removed -- EXCEPT
-# generated junk created in the DEST by running installed scripts (__pycache__,
-# *.pyc, .pytest_cache), which is preserved and never reported as drift (see
-# IGNORE_PATTERNS below).
+# content created in the DEST by running installed scripts (__pycache__,
+# *.pyc, .pytest_cache, and skill output dirs like reports/), which is
+# preserved and never reported as drift (see IGNORE_PATTERNS below).
 #
 # Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 #   -y / --yes       overwrite without prompting
@@ -45,15 +45,17 @@ DESTINATIONS=()
 # + the required SKILL.md). Extra entries come from each skill's .skillpack.
 BASELINE_INCLUDES=(SKILL.md scripts references assets)
 
-# Generated junk to preserve in the destination (created by running installed
-# scripts). Excluded from both the diff preview and the mirror apply, so it is
-# never reported as drift and never deleted.
-IGNORE_PATTERNS=(__pycache__ '*.pyc' '*.pyo' .pytest_cache)
+# Destination content to preserve across installs: generated junk plus skill
+# output dirs (e.g. cost-estimator writes reports/ next to its SKILL.md).
+# Excluded from both the diff preview and the mirror apply, so it is never
+# reported as drift and never deleted. No skill may SHIP a top-level entry
+# with one of these names (it would be skipped on install).
+IGNORE_PATTERNS=(__pycache__ '*.pyc' '*.pyo' .pytest_cache reports)
 
 # Mirror $1 -> $2, deleting destination files absent from source but preserving
-# IGNORE_PATTERNS. Prefers rsync (surgical); falls back to rm+cp when rsync is
-# unavailable (the fallback cannot preserve dest-only junk -- acceptable, since
-# the platform that actually hits the junk problem is Windows / the .bat).
+# IGNORE_PATTERNS. Prefers rsync (surgical). Without rsync, the old destination
+# is moved aside, the fresh copy laid down, and IGNORE_PATTERNS entries restored
+# from the old tree -- dest-only output like reports/ must survive either path.
 mirror_tree() {
     local from="$1" to="$2" p
     if command -v rsync >/dev/null 2>&1; then
@@ -61,8 +63,30 @@ mirror_tree() {
         for p in "${IGNORE_PATTERNS[@]}"; do rexcl+=(--exclude="$p"); done
         mkdir -p "$to"
         rsync -a --delete "${rexcl[@]}" "$from/" "$to/"
+        return
+    fi
+    local backup=""
+    if [ -d "$to" ]; then
+        backup="${to}.preserve.$$"
+        rm -rf "$backup"
+        mv "$to" "$backup"
     else
-        rm -rf "$to"; mkdir -p "$to"; cp -a "$from/." "$to/"
+        rm -rf "$to"
+    fi
+    mkdir -p "$to"
+    cp -a "$from/." "$to/"
+    if [ -n "$backup" ]; then
+        local f rel
+        for p in "${IGNORE_PATTERNS[@]}"; do
+            while IFS= read -r -d '' f; do
+                rel="${f#"$backup"/}"
+                if [ ! -e "$to/$rel" ]; then
+                    mkdir -p "$(dirname "$to/$rel")"
+                    cp -a "$f" "$to/$rel"
+                fi
+            done < <(find "$backup" -name "$p" -print0 2>/dev/null)
+        done
+        rm -rf "$backup"
     fi
 }
 

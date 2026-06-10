@@ -246,4 +246,4 @@ Clean up first, then gate — don't ratchet from a noisy baseline. Run
 `workspace/` trees first (they will dominate otherwise), then address real findings
 before setting `failBelow`. Reference: git-wizard uses `failBelow: 80`.
 
-Full detail: `C:\Users\mtsch\.claude\notes\idioms_linters.md` (AI-slop gate section).
+Full detail: the aislop section of the user's global `CLAUDE.md`.

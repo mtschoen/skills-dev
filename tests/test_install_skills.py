@@ -23,6 +23,42 @@ def home_with(tmp_path, *harness_dirs):
     return {"HOME": str(tmp_path)}
 
 
+class TestMirrorPreservesDestinationOutput:
+    """Dest-only generated output (reports/, __pycache__) must survive a
+    reinstall on both mirror paths, including the no-rsync fallback that
+    Windows Git-Bash takes."""
+
+    def test_reports_and_junk_survive_update_install(self, tmp_repo, tmp_path):
+        env = home_with(tmp_path, ".claude")
+        make_skill(tmp_repo, "keeper", files={"SKILL.md": "# keeper v1\n"})
+        result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
+        assert result.returncode == 0
+        dest = tmp_path / ".claude" / "skills" / "keeper"
+        assert (dest / "SKILL.md").exists()
+
+        (dest / "reports").mkdir()
+        (dest / "reports" / "april.md").write_text("spend report\n")
+        (dest / "__pycache__").mkdir()
+        (dest / "__pycache__" / "x.pyc").write_text("junk\n")
+        (dest / "stale.txt").write_text("left by an older install\n")
+
+        # Change the source so the update path (mirror_tree) actually runs.
+        (tmp_repo / "keeper" / "SKILL.md").write_text("# keeper v2\n")
+        subprocess.run(
+            ["git", "add", "SKILL.md"],
+            cwd=tmp_repo / "keeper",
+            check=True,
+            capture_output=True,
+        )
+
+        result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
+        assert result.returncode == 0
+        assert (dest / "SKILL.md").read_text() == "# keeper v2\n"
+        assert (dest / "reports" / "april.md").read_text() == "spend report\n"
+        assert (dest / "__pycache__" / "x.pyc").exists()
+        assert not (dest / "stale.txt").exists()
+
+
 class TestHelpAndUsage:
     def test_help_long_flag_shows_usage_and_exits_zero(self, tmp_repo):
         result = run_install_script(tmp_repo, "--help")
@@ -154,7 +190,9 @@ class TestDestinationFlags:
             env_override={"HOME": str(tmp_path)},
         )
         assert result.returncode == 0
-        assert (tmp_path / ".gemini" / "skills" / "gemini-skill" / "SKILL.md").exists()
+        assert (
+            tmp_path / ".gemini" / "config" / "skills" / "gemini-skill" / "SKILL.md"
+        ).exists()
 
 
 class TestExistingOnlyDefault:
@@ -163,11 +201,13 @@ class TestExistingOnlyDefault:
 
     def test_installs_to_each_existing_harness(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "deux")
-        env = home_with(tmp_path, ".claude", ".gemini")  # .agents absent
+        env = home_with(tmp_path, ".claude", ".gemini/config")  # .agents absent
         result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
         assert (tmp_path / ".claude" / "skills" / "deux" / "SKILL.md").exists()
-        assert (tmp_path / ".gemini" / "skills" / "deux" / "SKILL.md").exists()
+        assert (
+            tmp_path / ".gemini" / "config" / "skills" / "deux" / "SKILL.md"
+        ).exists()
         assert not (tmp_path / ".agents").exists()
         assert "skip agents" in result.stdout
 
@@ -196,7 +236,9 @@ class TestExistingOnlyDefault:
             tmp_repo, "--gemini", "-y", "forced", env_override=env
         )
         assert result.returncode == 0
-        assert (tmp_path / ".gemini" / "skills" / "forced" / "SKILL.md").exists()
+        assert (
+            tmp_path / ".gemini" / "config" / "skills" / "forced" / "SKILL.md"
+        ).exists()
 
     def test_all_flag_force_creates_every_harness(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "everywhere")
@@ -205,8 +247,11 @@ class TestExistingOnlyDefault:
             tmp_repo, "--all", "-y", "everywhere", env_override=env
         )
         assert result.returncode == 0
-        for harness in (".agents", ".claude", ".gemini"):
-            assert (tmp_path / harness / "skills" / "everywhere" / "SKILL.md").exists()
+        assert (tmp_path / ".agents" / "skills" / "everywhere" / "SKILL.md").exists()
+        assert (tmp_path / ".claude" / "skills" / "everywhere" / "SKILL.md").exists()
+        assert (
+            tmp_path / ".gemini" / "config" / "skills" / "everywhere" / "SKILL.md"
+        ).exists()
 
 
 class TestDefaultSelection:
