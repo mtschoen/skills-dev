@@ -17,7 +17,7 @@ The workflow:
 5. Add as submodule. **Sequencing pitfall:** `git submodule add ../skills-<name>.git <name>` resolves the relative URL against whichever superproject remote git picks first (alphabetically `github` before `origin`). At this step GitHub is still empty (only Gitea has the initial commit from step 3), so the relative-URL form fails with `cloned an empty repository / branch yet to be born / unable to checkout submodule`. Use the **absolute Gitea URL**, then rewrite `.gitmodules` to the relative form:
 
    ```bash
-   git submodule add gitea@llamabox.internal:schoen/skills-<name>.git <name>
+   git submodule add gitea@llamabox.sticktoitive.net:schoen/skills-<name>.git <name>
    git config -f .gitmodules submodule.<name>.url ../skills-<name>.git
    ```
 
