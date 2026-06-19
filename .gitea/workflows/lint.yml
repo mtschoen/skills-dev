@@ -82,4 +82,4 @@ jobs:
         # npm registry (see .npmrc); self-signed cert via NODE_EXTRA_CA_CERTS.
         env:
           NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/.gitea-ca.pem
-        run: npx -y @schoen/aislop@0.10.1 ci
+        run: npx -y @schoen/aislop@0.12.0 ci
