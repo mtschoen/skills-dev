@@ -79,7 +79,6 @@ jobs:
           node-version: '22'
       - name: aislop ci (score 100 gate)
         # Fork build @schoen/aislop (C#/roslynator + newer rules) from the Gitea
-        # npm registry (see .npmrc); self-signed cert via NODE_EXTRA_CA_CERTS.
-        env:
-          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/.gitea-ca.pem
+        # npm registry (see .npmrc); Gitea serves a Let's Encrypt cert so Node
+        # verifies it natively (no NODE_EXTRA_CA_CERTS needed).
         run: npx -y @schoen/aislop@0.12.0 ci
