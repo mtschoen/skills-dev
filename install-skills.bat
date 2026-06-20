@@ -10,9 +10,8 @@ rem extra top-level entries listed in the skill's optional .skillpack manifest.
 rem Tracked-only shipping means generated junk (e.g. __pycache__) can't leak
 rem from source. Each install mirrors a clean staging tree, so files left by
 rem older installs are removed -- EXCEPT content created in the DEST by
-rem running installed scripts (__pycache__, *.pyc, .pytest_cache, and skill
-rem output dirs like reports\), which is preserved and never reported as
-rem drift (see ROBO_EXCL below).
+rem running installed scripts (__pycache__, *.pyc, .pytest_cache), which is
+rem preserved and never reported as drift (see ROBO_EXCL below).
 rem
 rem Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
 rem   -y / --yes       overwrite without prompting
@@ -41,12 +40,14 @@ set "SELECTED="
 set "DEST_COUNT=0"
 set "ABORT=0"
 
-rem Destination content to preserve across installs: generated junk plus skill
-rem output dirs (e.g. cost-estimator's reports\). Excluding these from robocopy
-rem means /MIR won't delete them and the /L preview won't list them as *EXTRA.
-rem Applies to every robocopy call below. No skill may SHIP a top-level entry
-rem with one of these names (it would be skipped on install).
-set "ROBO_EXCL=/XD __pycache__ .pytest_cache reports /XF *.pyc *.pyo"
+rem Destination content to preserve across installs: generated junk created in
+rem the DEST by running installed scripts (Python caches). Excluding these from
+rem robocopy means /MIR won't delete them and the /L preview won't list them as
+rem *EXTRA. Applies to every robocopy call below. No skill may SHIP a top-level
+rem entry with one of these names (it would be skipped on install). Skills now
+rem write generated output OUTSIDE the install tree (e.g. cost-estimator uses
+rem ~/.claude/cost-estimator/), so reports\ no longer needs preserving here.
+set "ROBO_EXCL=/XD __pycache__ .pytest_cache /XF *.pyc *.pyo"
 
 :parse_args
 if "%~1"=="" goto parse_done
