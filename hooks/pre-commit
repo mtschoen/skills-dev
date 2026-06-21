@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Pre-commit gate mirroring the umbrella's hard CI ruff job
+# (.gitea/workflows/lint.yml), so format/lint drift never reaches CI:
+#   ruff format --check scripts/ tests/   +   ruff check scripts/ tests/
+#
+# Umbrella-owned code only -- each skill submodule owns its own gate, matching the
+# CI scoping (pyproject.toml excludes submodule trees). The on-save hook
+# (.claude/hooks/ruff_on_save.py) auto-formats during Claude sessions; this is the
+# author/machine-independent backstop.
+#
+# shellcheck, markdownlint, validate-skills, and aislop stay CI-only. shellcheck
+# in particular is deliberately NOT run here: on Windows the .sh files are checked
+# out with CRLF, which shellcheck flags as SC1017 ("literal carriage return") --
+# a false positive that would block every commit. CI runs it on Linux (LF) where
+# it is meaningful. The repo policy already treats shellcheck as optional locally.
+#
+# core.hooksPath is per-clone local config (not committed). Enable once per clone:
+#   git config core.hooksPath hooks
+set -euo pipefail
+
+if command -v ruff >/dev/null 2>&1; then
+  RUFF=(ruff)
+elif command -v python >/dev/null 2>&1 && python -m ruff --version >/dev/null 2>&1; then
+  RUFF=(python -m ruff)
+elif command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then
+  RUFF=(python3 -m ruff)
+else
+  echo "pre-commit: ruff not found (pip install ruff==0.15.15). This gate mirrors CI." >&2
+  exit 1
+fi
+
+fail=0
+if ! "${RUFF[@]}" format --check scripts/ tests/; then
+  echo "pre-commit: 'ruff format --check scripts/ tests/' failed -- run 'ruff format scripts/ tests/'." >&2
+  fail=1
+fi
+if ! "${RUFF[@]}" check scripts/ tests/; then
+  echo "pre-commit: 'ruff check scripts/ tests/' failed." >&2
+  fail=1
+fi
+
+exit "$fail"

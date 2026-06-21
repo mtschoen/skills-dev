@@ -1,0 +1,4 @@
+# The git pre-commit hook is a bash script: force LF so a Windows checkout never
+# materializes it with CRLF (a CRLF shebang can break execution via git's hook
+# runner). core.hooksPath points git at hooks/ (see CLAUDE.md "Linting").
+hooks/pre-commit text eol=lf

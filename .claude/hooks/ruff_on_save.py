@@ -76,6 +76,10 @@ def lint(file_path):
     if file_path.endswith(".py"):
         ruff = shutil.which("ruff")
         if ruff:
+            # Auto-apply formatting first so an edit never carries format drift
+            # into a commit (CI gates `ruff format --check`); then surface lint
+            # findings. The format pass rewrites the file in place when needed.
+            _run("ruff-format", file_path, ruff, "format", file_path)
             out, code = _run("ruff", file_path, ruff, "check", file_path)
             if out and code != 0:
                 findings.append(("ruff", out))
@@ -92,7 +96,9 @@ def lint(file_path):
             # edited file. Without them, the repo's .markdownlint-cli2.jsonc globs
             # are merged in and cli2 re-lints the whole tree (~65 files) on every
             # save, reporting findings from unrelated files. Rules still apply.
-            out, code = _run("markdownlint", file_path, markdownlint, "--no-globs", f":{file_path}")
+            out, code = _run(
+                "markdownlint", file_path, markdownlint, "--no-globs", f":{file_path}"
+            )
             if out and code != 0:
                 findings.append(("markdownlint", out))
         # A SKILL.md additionally gets Agent Skills spec validation (frontmatter,
@@ -101,7 +107,9 @@ def lint(file_path):
             agentskills = shutil.which("agentskills")
             if agentskills:
                 skill_dir = os.path.dirname(file_path) or "."
-                out, code = _run("skillref", file_path, agentskills, "validate", skill_dir)
+                out, code = _run(
+                    "skillref", file_path, agentskills, "validate", skill_dir
+                )
                 if out and code != 0:
                     findings.append(("skillref (agentskills validate)", out))
     return findings
