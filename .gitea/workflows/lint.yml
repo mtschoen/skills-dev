@@ -88,4 +88,4 @@ jobs:
         # Fork build @schoen/aislop (C#/roslynator + newer rules) from the Gitea
         # npm registry (see .npmrc); Gitea serves a Let's Encrypt cert so Node
         # verifies it natively (no NODE_EXTRA_CA_CERTS needed).
-        run: npx -y @schoen/aislop@0.12.2 ci
+        run: npx -y @schoen/aislop@0.12.3 ci
