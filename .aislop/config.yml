@@ -8,13 +8,16 @@
 
 version: 1
 
-# format + lint are owned by the dedicated, version-pinned ruff gate
-# (pyproject.toml + the ruff CI job). aislop bundles its own ruff that disagrees
-# with ours on shebang/docstring spacing, so letting both police ruff causes
-# mutually-incompatible reformatting. Disable aislop's ruff passthrough; aislop
-# keeps its unique value (code-quality, ai-slop, architecture, security).
+# Formatting's source of truth is the dedicated, version-pinned ruff gate
+# (pyproject.toml + the ruff CI job). aislop's format engine runs as a redundant
+# belt-and-suspenders check: @schoen/aislop >= 0.12.2 prefers the project's PATH
+# ruff over its vendored copy (mtschoen/aislop#1), so it formats with the SAME
+# pinned ruff when one is installed - the CI aislop job pins ruff for exactly
+# this. Before 0.12.2 the vendored ruff could disagree with ours on
+# shebang/docstring spacing, which is why this was off. `lint` (ruff check
+# passthrough) stays off; the dedicated ruff job owns it.
 engines:
-  format: false
+  format: true
   lint: false
   code-quality: true
   ai-slop: true

@@ -64,12 +64,14 @@ jobs:
         run: shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
 
   aislop:
-    # AI-slop / code-quality / security gate over umbrella-owned code. Pinned
-    # to a known release (pre-1.0; unpinned npx could change rules and break the
-    # gate). Scope + threshold (score 100) come from .aislop/config.yml. ruff
-    # format/lint passthrough is disabled there — the dedicated ruff job owns
-    # Python formatting/linting (the two bundled ruffs disagree on shebang
-    # spacing). `aislop ci` exits non-zero below threshold.
+    # AI-slop / code-quality / security gate over umbrella-owned code, plus a
+    # redundant format check. Pinned to a known release (pre-1.0; unpinned npx
+    # could change rules and break the gate). Scope + threshold (score 100) come
+    # from .aislop/config.yml. aislop's format engine is enabled there as a
+    # belt-and-suspenders pass: @schoen/aislop >= 0.12.2 prefers the PATH ruff
+    # over its vendored copy, so we install the SAME pinned ruff the dedicated
+    # ruff job uses and aislop formats identically. `aislop ci` exits non-zero
+    # below threshold.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -77,8 +79,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install pinned ruff (so aislop's format pass matches CI's ruff job)
+        run: pip install ruff==0.15.15
       - name: aislop ci (score 100 gate)
         # Fork build @schoen/aislop (C#/roslynator + newer rules) from the Gitea
         # npm registry (see .npmrc); Gitea serves a Let's Encrypt cert so Node
         # verifies it natively (no NODE_EXTRA_CA_CERTS needed).
-        run: npx -y @schoen/aislop@0.12.0 ci
+        run: npx -y @schoen/aislop@0.12.2 ci

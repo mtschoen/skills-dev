@@ -28,8 +28,19 @@ _AISLOP_VERSION = "0.9.4"
 # Languages aislop actually scores. Markdown/shell are outside its scope, so an
 # edit to those should not trigger a whole-repo rescan.
 CODE_EXTENSIONS = {
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-    ".go", ".rs", ".rb", ".php", ".java", ".cs",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".java",
+    ".cs",
 }
 
 
@@ -76,7 +87,9 @@ def main():
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or "."
     start = time.perf_counter()
     result = subprocess.run(command, input=raw, capture_output=True, cwd=project_dir)
-    _record("aislop", file_path, (time.perf_counter() - start) * 1000, result.returncode)
+    _record(
+        "aislop", file_path, (time.perf_counter() - start) * 1000, result.returncode
+    )
     # Forward aislop's stdout (its additionalContext JSON, if any) unchanged.
     sys.stdout.buffer.write(result.stdout)
 
