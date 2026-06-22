@@ -154,7 +154,17 @@ Record per-toolset what mixed-mode actually yields, and a verdict: **fully-worke
 
 ## Phase 1: Skill scaffold + persistent-session driver
 
-Author content in a local `using-a-debugger/` directory inside skills-dev, made into **its own git repo at Task 1.1** (the submodule conversion in Phase 4 pushes this history to Gitea/GitHub and re-adds it as a submodule; it does NOT re-init). **Working-directory convention for Phases 1-3:** all `git add`/`git commit` commands below run from **inside the `using-a-debugger/` repo**, with paths relative to it (drop the leading `using-a-debugger/` shown for clarity). All driver code is stdlib-only Python. The code below assumes the Phase 0 verdict was `pipe+marker`; if Phase 0 chose `sb-api`, swap `server.py`'s backend per the spike note (the client/CLI/adapters are unchanged).
+Author content in a local `using-a-debugger/` directory inside skills-dev, made into **its own git repo at Task 1.1** (the submodule conversion in Phase 4 pushes this history to Gitea/GitHub and re-adds it as a submodule; it does NOT re-init). **Working-directory convention for Phases 1-3:** all `git add`/`git commit` commands below run from **inside the `using-a-debugger/` repo**, with paths relative to it (drop the leading `using-a-debugger/` shown for clarity). All driver code is stdlib-only Python.
+
+**Architecture (set by the Phase 0 spike - see `~/.claude/notes/spike_debugger_sessions.md`).** The persistent driver is a client/server: a long-lived **server** owns a **Backend** (one debugger process) and answers a short-lived **client** over a localhost socket, so the debuggee's state survives across agent tool calls. The agent speaks a **uniform verb language** (`break file:line`, `run`, `continue`, `step`, `stepin`, `local NAME`, `bt`, `raw <native>`); each Backend translates verbs to its debugger's native protocol. Three backend families, because the spike proved their I/O models genuinely differ:
+
+| Backend | Debuggers | Transport | Stop handling | Locals |
+|---|---|---|---|---|
+| `MiBackend` | netcoredbg, gdb | pipe (netcoredbg); PTY on Unix (gdb) | self-framing: gate on `*stopped`, drain to `(gdb)`; skip first `entry-point-hit` (netcoredbg) | `-var-create NAME * NAME` |
+| `LldbCliBackend` | lldb | pipe | async: read until `stop reason =\|Process \d+ exited`, THEN send `script print(TOKEN)` marker | `frame variable NAME` |
+| `CdbBackend` | cdb | pipe | synchronous prompt `0:000> `; marker `.echo TOKEN` | `dv NAME` / `dx` |
+
+Cross-cutting: Backends share a `Transport` (pipe vs PTY) and a working-binary `discovery` step (the spike found the Windows system LLVM lldb is broken - must locate a CLion-bundled lldb; cdb must be installed first). Verb -> native translation tables and all gating constants come verbatim from the spike note.
 
 ### Task 1.1: Scaffold the skill directory
 
@@ -198,441 +208,383 @@ git add using-a-debugger/SKILL.md using-a-debugger/README.md using-a-debugger/.g
 git commit -m "scaffold: using-a-debugger skill tree"
 ```
 
-### Task 1.2: Per-debugger adapters
+### Task 1.2: Transport layer (pipe + PTY)
 
 **Files:**
-- Create: `using-a-debugger/scripts/dbgsession/adapters.py`
-- Test: `using-a-debugger/scripts/dbgsession/test_adapters.py`
+- Create: `using-a-debugger/scripts/dbgsession/transport.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_transport.py`
 
 **Interfaces:**
-- Produces: `ADAPTERS: dict[str, Adapter]`; `Adapter` with fields `name`, `launch_argv(program, program_args) -> list[str]`, `marker_cmd(token) -> str`, `quit_cmd: str`. Consumed by `server.py`.
+- Produces: `open_transport(argv: list[str], kind: str) -> Transport` where `kind in {"pipe","pty"}`. `Transport` has `write(s: str) -> None`, `read_until(predicate, timeout) -> str` (accumulates output, returns once `predicate(acc)` is true; raises `TimeoutError`), `close() -> None`. Consumed by every Backend.
+- `PtyTransport` is POSIX-only (`pty.openpty`, `os.read`); `open_transport(..., "pty")` on Windows raises `RuntimeError`. Spike fact: gdb's CLI deadlocks on a plain pipe, so on Unix gdb gets `"pty"`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test** (`test_transport.py`)
 
-`test_adapters.py`:
 ```python
-from adapters import ADAPTERS
+import os, sys, pytest
+from transport import open_transport
 
-def test_lldb_marker_uses_script_print():
-    a = ADAPTERS["lldb"]
-    assert a.marker_cmd("TOK") == 'script print("TOK")'
+ECHO = [sys.executable, "-u", "-c",
+        "import sys\nfor line in sys.stdin:\n sys.stdout.write('GOT:'+line); sys.stdout.flush()"]
 
-def test_lldb_launch_argv_includes_program_and_args():
-    a = ADAPTERS["lldb"]
-    argv = a.launch_argv("/tmp/hello", ["--flag"])
-    assert argv[0] == "lldb"
-    assert "/tmp/hello" in argv
-    assert "--flag" in argv
+def test_pipe_read_until_marker():
+    t = open_transport(ECHO, "pipe")
+    try:
+        t.write("hello\n")
+        out = t.read_until(lambda acc: "GOT:hello" in acc, timeout=10)
+        assert "GOT:hello" in out
+    finally:
+        t.close()
 
-def test_gdb_marker_uses_echo():
-    assert ADAPTERS["gdb"].marker_cmd("TOK") == "echo TOK\\n"
+def test_pipe_read_until_times_out():
+    t = open_transport(ECHO, "pipe")
+    try:
+        with pytest.raises(TimeoutError):
+            t.read_until(lambda acc: "NEVER" in acc, timeout=1)
+    finally:
+        t.close()
 
-def test_every_adapter_has_quit():
-    assert all(a.quit_cmd for a in ADAPTERS.values())
+@pytest.mark.skipif(os.name == "nt", reason="pty is POSIX-only")
+def test_pty_available_on_posix():
+    t = open_transport(ECHO, "pty")
+    try:
+        t.write("hi\n")
+        assert "GOT:hi" in t.read_until(lambda acc: "GOT:hi" in acc, timeout=10)
+    finally:
+        t.close()
+
+def test_pty_rejected_on_windows():
+    if os.name == "nt":
+        with pytest.raises(RuntimeError):
+            open_transport(ECHO, "pty")
 ```
 
-- [ ] **Step 2: Run, verify it fails**
+- [ ] **Step 2: Run, verify it fails** - `cd using-a-debugger/scripts/dbgsession && python -m pytest test_transport.py -q` -> FAIL (no module `transport`).
 
-Run: `cd using-a-debugger/scripts/dbgsession && python -m pytest test_adapters.py -q`
-Expected: FAIL (`No module named 'adapters'`).
+- [ ] **Step 3: Implement `transport.py`**
 
-- [ ] **Step 3: Implement adapters.py**
+Reference implementation (must satisfy the tests and the spike-verified behavior: pipe uses a reader thread + queue; pty uses `os.read` on the master fd and strips command echo / `\r` / ANSI):
 
 ```python
-"""Per-debugger launch + marker conventions for the session server.
-
-A debugger is driven over piped stdin/stdout. After each user command the
-server sends marker_cmd(token), which forces the debugger to echo a unique
-delimiter line so the server knows where that command's output ends.
-
-Marker conventions and MI/CLI choices are grounded in the spike note
-~/.claude/notes/spike_debugger_sessions.md.
-"""
-from dataclasses import dataclass
+import os, queue, re, subprocess, threading, time
 from typing import Callable
 
-
-@dataclass(frozen=True)
-class Adapter:
-    name: str
-    launch_argv: Callable[[str, list], list]
-    marker_cmd: Callable[[str], str]
-    quit_cmd: str
+_ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 
-def _lldb_argv(program, program_args):
-    return ["lldb", "--no-use-colors", program, "--", *program_args] if program_args \
-        else ["lldb", "--no-use-colors", program]
+class Transport:
+    def write(self, s: str) -> None: raise NotImplementedError
+    def read_until(self, predicate: Callable[[str], bool], timeout: float) -> str: raise NotImplementedError
+    def close(self) -> None: raise NotImplementedError
 
 
-def _gdb_argv(program, program_args):
-    base = ["gdb", "--nx", "--quiet"]
-    return [*base, "--args", program, *program_args] if program_args else [*base, program]
-
-
-def _cdb_argv(program, program_args):
-    return ["cdb", program, *program_args]
-
-
-def _netcoredbg_argv(program, program_args):
-    # program is the managed entry: e.g. "dotnet" with app.dll in program_args,
-    # or a published host exe. Confirmed against the spike note.
-    return ["netcoredbg", "--interpreter=cli", "--", program, *program_args]
-
-
-ADAPTERS = {
-    "lldb": Adapter("lldb", _lldb_argv, lambda t: f'script print("{t}")', "quit"),
-    "gdb": Adapter("gdb", _gdb_argv, lambda t: f"echo {t}\\n", "quit"),
-    "cdb": Adapter("cdb", _cdb_argv, lambda t: f".echo {t}", "q"),
-    "netcoredbg": Adapter("netcoredbg", _netcoredbg_argv, lambda t: f'print "{t}"', "quit"),
-}
-```
-
-- [ ] **Step 4: Run, verify pass**
-
-Run: `python -m pytest test_adapters.py -q`
-Expected: PASS (4 passed).
-
-- [ ] **Step 5: Commit**
-```bash
-git add using-a-debugger/scripts/dbgsession/adapters.py using-a-debugger/scripts/dbgsession/test_adapters.py
-git commit -m "feat(driver): per-debugger launch + marker adapters"
-```
-
-### Task 1.3: Session server (owns the debugger, marker-delimited reads)
-
-**Files:**
-- Create: `using-a-debugger/scripts/dbgsession/server.py`
-- Test: `using-a-debugger/scripts/dbgsession/test_server_lldb.py` (integration; local-run, skipped if lldb/clang absent)
-
-**Interfaces:**
-- Produces: `Server(debugger, program, program_args, session_dir)`, methods `start()`, `send(command: str) -> str`, `stop()`. Writes `<session_dir>/port` (int) on start. Consumed by `dbg-session.py` and `client.py`.
-
-- [ ] **Step 1: Write the failing integration test**
-
-`test_server_lldb.py` (the real verify - drives a live lldb session across send() calls):
-```python
-import os, shutil, subprocess, tempfile, textwrap, pytest
-from pathlib import Path
-from server import Server
-
-HELLO = textwrap.dedent('''
-    int add(int a,int b){int s=a+b;return s;}
-    int main(){int r=add(2,5);return r-r;}
-''')
-
-@pytest.mark.skipif(not shutil.which("lldb") or not shutil.which("clang++"),
-                    reason="needs lldb + clang++")
-def test_live_lldb_session_holds_state_across_sends():
-    d = Path(tempfile.mkdtemp())
-    (d / "hello.cpp").write_text(HELLO)
-    exe = d / ("hello.exe" if os.name == "nt" else "hello")
-    subprocess.run(["clang++", "-g", "-O0", "-o", str(exe), str(d / "hello.cpp")], check=True)
-    s = Server("lldb", str(exe), [], d)
-    s.start()
-    try:
-        assert (d / "port").exists()
-        s.send("breakpoint set --file hello.cpp --line 1")
-        out_run = s.send("run")
-        assert "stop reason" in out_run.lower()
-        out_vars = s.send("frame variable a b")
-        assert "a =" in out_vars and "b =" in out_vars   # state is live at the hit
-    finally:
-        s.stop()
-```
-
-- [ ] **Step 2: Run, verify it fails**
-
-Run: `cd using-a-debugger/scripts/dbgsession && python -m pytest test_server_lldb.py -q`
-Expected: FAIL (`No module named 'server'`).
-
-- [ ] **Step 3: Implement server.py**
-
-```python
-"""Long-lived server that owns one debugger subprocess and answers send()
-calls with marker-delimited command output. A short-lived client (one per
-agent tool call) talks to it over a localhost socket so the debuggee's state
-survives between calls.
-
-Backend grounded in the spike note. If the spike chose the lldb SB API over
-piped stdin, replace _spawn/_read_until_marker with the SB-API variant
-documented there; the socket protocol below is unchanged.
-"""
-import itertools
-import queue
-import socket
-import subprocess
-import threading
-from pathlib import Path
-
-from adapters import ADAPTERS
-
-
-class Server:
-    def __init__(self, debugger, program, program_args, session_dir):
-        self.adapter = ADAPTERS[debugger]
-        self.program = program
-        self.program_args = list(program_args)
-        self.session_dir = Path(session_dir)
-        self._proc = None
-        self._lines = queue.Queue()
-        self._tokens = itertools.count(1)
-        self._sock = None
-        self._serving = False
-
-    def start(self):
-        self._proc = subprocess.Popen(
-            self.adapter.launch_argv(self.program, self.program_args),
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1,
-        )
+class PipeTransport(Transport):
+    def __init__(self, argv):
+        self.p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True, bufsize=1)
+        self.q = queue.Queue()
         threading.Thread(target=self._pump, daemon=True).start()
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.bind(("127.0.0.1", 0))
-        self._sock.listen(1)
-        port = self._sock.getsockname()[1]
-        self.session_dir.mkdir(parents=True, exist_ok=True)
-        (self.session_dir / "port").write_text(str(port))
 
     def _pump(self):
-        for line in self._proc.stdout:
-            self._lines.put(line)
+        for line in self.p.stdout:
+            self.q.put(line)
 
-    def send(self, command, timeout=30):
-        token = f"@@DBG{next(self._tokens)}@@"
-        self._proc.stdin.write(command + "\n")
-        self._proc.stdin.write(self.adapter.marker_cmd(token) + "\n")
-        self._proc.stdin.flush()
-        out = []
+    def write(self, s):
+        self.p.stdin.write(s); self.p.stdin.flush()
+
+    def read_until(self, predicate, timeout):
+        acc, deadline = "", time.monotonic() + timeout
         while True:
-            line = self._lines.get(timeout=timeout)
-            if line.strip() == token:
-                return "".join(out)
-            out.append(line)
+            if predicate(acc):
+                return acc
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"read_until timed out; acc so far:\n{acc}")
+            try:
+                acc += self.q.get(timeout=min(remaining, 0.5))
+            except queue.Empty:
+                pass
 
-    def serve_forever(self):
-        self._serving = True
-        while self._serving:
-            conn, _ = self._sock.accept()
-            with conn:
-                data = conn.recv(65536).decode("utf-8")
-                if data == "__STOP__":
-                    self._serving = False
-                    reply = "stopped"
-                else:
-                    try:
-                        reply = self.send(data)
-                    except queue.Empty:
-                        reply = "__TIMEOUT__"
-                conn.sendall(reply.encode("utf-8"))
-        self.stop()
+    def close(self):
+        try: self.p.kill()
+        except Exception: pass
 
-    def stop(self):
-        try:
-            if self._proc and self._proc.poll() is None:
-                self._proc.stdin.write(self.adapter.quit_cmd + "\n")
-                self._proc.stdin.flush()
-                self._proc.wait(timeout=5)
-        except Exception:
-            if self._proc:
-                self._proc.kill()
-        finally:
-            if self._sock:
-                self._sock.close()
-            p = self.session_dir / "port"
-            if p.exists():
-                p.unlink()
+
+class PtyTransport(Transport):
+    def __init__(self, argv):
+        if os.name == "nt":
+            raise RuntimeError("PtyTransport is POSIX-only")
+        import pty
+        self.master, slave = pty.openpty()
+        self.p = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+        os.close(slave)
+
+    def write(self, s):
+        os.write(self.master, s.encode())
+
+    def read_until(self, predicate, timeout):
+        import select
+        acc, deadline = "", time.monotonic() + timeout
+        while True:
+            if predicate(acc):
+                return acc
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"read_until timed out; acc so far:\n{acc}")
+            r, _, _ = select.select([self.master], [], [], min(remaining, 0.5))
+            if r:
+                try:
+                    chunk = os.read(self.master, 4096).decode(errors="replace")
+                except OSError:
+                    return acc
+                acc += _ANSI.sub("", chunk.replace("\r", ""))
+
+    def close(self):
+        try: self.p.kill()
+        except Exception: pass
+        try: os.close(self.master)
+        except Exception: pass
+
+
+def open_transport(argv, kind):
+    if kind == "pipe":
+        return PipeTransport(argv)
+    if kind == "pty":
+        return PtyTransport(argv)
+    raise ValueError(f"unknown transport kind: {kind}")
 ```
 
-- [ ] **Step 4: Run, verify pass**
+- [ ] **Step 4: Run, verify pass** - `python -m pytest test_transport.py -q` -> PASS (pty tests skip on Windows).
+- [ ] **Step 5: Commit** - `git add scripts/dbgsession/transport.py scripts/dbgsession/test_transport.py && git commit -m "feat(driver): pipe + pty transport layer"`
 
-Run: `python -m pytest test_server_lldb.py -q`
-Expected: PASS (1 passed) on a machine with lldb + clang++. If skipped, run on a machine that has them (chonkers has lldb; install clang if needed) before checking the box.
-
-- [ ] **Step 5: Commit**
-```bash
-git add using-a-debugger/scripts/dbgsession/server.py using-a-debugger/scripts/dbgsession/test_server_lldb.py
-git commit -m "feat(driver): session server with marker-delimited reads"
-```
-
-### Task 1.4: Client + CLI entry point
+### Task 1.3: MI mini-parser
 
 **Files:**
-- Create: `using-a-debugger/scripts/dbgsession/client.py`, `using-a-debugger/scripts/dbg-session.py`
-- Test: `using-a-debugger/scripts/dbgsession/test_cli_lldb.py` (integration, local-run)
+- Create: `using-a-debugger/scripts/dbgsession/miparse.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_miparse.py`
 
 **Interfaces:**
-- Consumes: `Server` (Task 1.3).
-- Produces CLI: `dbg-session.py start --debugger D --session NAME -- PROGRAM [ARGS...]` (forks the server, backgrounded); `dbg-session.py send --session NAME "COMMAND"` (prints output); `dbg-session.py stop --session NAME`.
+- Produces: `parse_mi_line(line: str) -> dict` returning `{"kind": "result"|"async"|"stream"|"prompt", "class": str, "fields": dict}`. Examples: `*stopped,reason="breakpoint-hit"` -> `{"kind":"async","class":"stopped","fields":{"reason":"breakpoint-hit"}}`; `(gdb)` -> `{"kind":"prompt"}`; `^done,name="a",value="0"` -> `{"kind":"result","class":"done","fields":{"name":"a","value":"0"}}`. Stdlib only, hand-rolled (NOT pygdbmi). Consumed by `MiBackend`.
 
-- [ ] **Step 1: Write the failing end-to-end CLI test**
+- [ ] **Step 1: Write the failing test** (`test_miparse.py`) - cases drawn verbatim from the spike note:
 
-`test_cli_lldb.py`:
 ```python
-import os, shutil, subprocess, sys, tempfile, textwrap, time, pytest
+from miparse import parse_mi_line
+
+def test_prompt():
+    assert parse_mi_line("(gdb)")["kind"] == "prompt"
+
+def test_stopped_breakpoint():
+    r = parse_mi_line('*stopped,reason="breakpoint-hit",thread-id="1"')
+    assert r["kind"] == "async" and r["class"] == "stopped"
+    assert r["fields"]["reason"] == "breakpoint-hit"
+
+def test_entry_point_hit():
+    r = parse_mi_line('*stopped,reason="entry-point-hit"')
+    assert r["fields"]["reason"] == "entry-point-hit"
+
+def test_var_create_result():
+    r = parse_mi_line('^done,name="a",value="0",type="int"')
+    assert r["kind"] == "result" and r["class"] == "done"
+    assert r["fields"]["value"] == "0"
+
+def test_error_result():
+    assert parse_mi_line('^error,msg="oops"')["class"] == "error"
+
+def test_non_mi_returns_stream():
+    assert parse_mi_line("random console text")["kind"] == "stream"
+```
+
+- [ ] **Step 2: Run, verify fail** -> no module `miparse`.
+- [ ] **Step 3: Implement `miparse.py`** - classify by leading token (`^`/`*`/`=`/`~`/`@`/`&`/`(gdb)`), then extract top-level `key="value"` and `key=value` pairs with a small scanner that respects `"`, `{}`, `[]` nesting. Keep to the fields the backend needs (`reason`, `name`, `value`, `type`, `msg`, `bkpt`). Unrecognized lines -> `{"kind":"stream","class":"console","fields":{"text":line}}`.
+- [ ] **Step 4: Run, verify pass.**
+- [ ] **Step 5: Commit** - `git add scripts/dbgsession/miparse.py scripts/dbgsession/test_miparse.py && git commit -m "feat(driver): hand-rolled GDB/MI mini-parser"`
+
+### Task 1.4: Backend base + MiBackend (netcoredbg + gdb)
+
+**Files:**
+- Create: `using-a-debugger/scripts/dbgsession/backends/__init__.py`, `backends/base.py`, `backends/mi.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_mi_backend.py` (integration; local-run, skipif tools absent)
+
+**Interfaces:**
+- Produces: `class Backend` (ABC) with the **uniform verb methods** every backend implements:
+  `start()`, `set_breakpoint(file, line) -> str`, `run() -> str`, `cont() -> str`, `step_over() -> str`, `step_into() -> str`, `read_local(name) -> str`, `backtrace() -> str`, `raw(native_cmd) -> str`, `stop()`.
+- `MiBackend(debugger, kind, program, program_args, debugger_path)` where `debugger in {"netcoredbg","gdb"}`. Uses pipe for netcoredbg, pty for gdb-on-POSIX. Consumed by the server's verb dispatch (Task 1.8).
+
+**Verified behavior (spike note - copy constants exactly):**
+- netcoredbg launch: `<netcoredbg> --interpreter=mi -- dotnet <app.dll>`; gdb launch: `gdb --interpreter=mi2 --args <prog> <args...>`.
+- Breakpoint: `-break-insert <file>:<line>`. Run: `-exec-run`. Continue: `-exec-continue`. Step over: `-exec-next`. Step into: `-exec-step`.
+- Stop = read transport until a parsed `*stopped` record appears, then drain to the next `(gdb)` prompt. Return a human-readable stop summary.
+- netcoredbg only: after `-exec-run`, the FIRST `*stopped` is `reason="entry-point-hit"` - the backend must auto-`-exec-continue` once to reach the user breakpoint (do NOT do this for gdb).
+- Local read: `-var-create <name> * <name>` -> parse `value="..."` from the `^done`. (`-stack-list-locals` / `-data-evaluate-expression` are NOT in netcoredbg's MI subset - do not use them.)
+
+- [ ] **Step 1: Write the failing integration test** (`test_mi_backend.py`)
+
+```python
+import os, shutil, subprocess, sys, tempfile, textwrap, pytest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backends.mi import MiBackend
 
-CLI = str(Path(__file__).resolve().parents[1] / "dbg-session.py")
-HELLO = "int add(int a,int b){int s=a+b;return s;}\nint main(){return add(2,5)-7;}\n"
+NETCOREDBG = shutil.which("netcoredbg") or os.environ.get("NETCOREDBG")
 
-@pytest.mark.skipif(not shutil.which("lldb") or not shutil.which("clang++"),
-                    reason="needs lldb + clang++")
-def test_cli_start_send_stop():
+@pytest.mark.skipif(not NETCOREDBG or not shutil.which("dotnet"),
+                    reason="needs netcoredbg + dotnet")
+def test_netcoredbg_live_session_reads_locals():
     d = Path(tempfile.mkdtemp())
-    (d / "hello.cpp").write_text(HELLO)
+    subprocess.run(["dotnet", "new", "console", "-o", str(d)], check=True)
+    (d / "Program.cs").write_text(textwrap.dedent('''
+        int Add(int a, int b){ int sum=a+b; return sum; }   // line 2
+        for (int i=0;i<3;i++){ int r=Add(i,i*2); System.Console.WriteLine(r); }
+    '''))
+    subprocess.run(["dotnet", "build", "-c", "Debug"], cwd=d, check=True)
+    dll = next(d.glob("bin/Debug/net*/*.dll"))
+    b = MiBackend("netcoredbg", "pipe", "dotnet", [str(dll)], NETCOREDBG)
+    b.start()
+    try:
+        b.set_breakpoint("Program.cs", 2)
+        b.run()                      # auto-skips entry-point-hit to the user bp
+        assert b.read_local("a") == "0"
+        assert b.read_local("b") == "0"
+        b.cont()                     # next hit
+        assert b.read_local("a") == "1"
+    finally:
+        b.stop()
+```
+
+(A sibling `test_gdb_backend.py` guarded by `shutil.which("gdb")` mirrors this against a `g++ -g -O0` C++ target with `MiBackend("gdb","pty",...)` - runs on Linux/llamabox.)
+
+- [ ] **Step 2: Run, verify fail** -> no `backends.mi`.
+- [ ] **Step 3: Implement `base.py` + `mi.py`** per the verified behavior above, using `Transport` (Task 1.2) and `parse_mi_line` (Task 1.3). Gate stop on a parsed `*stopped`; implement the netcoredbg entry-point skip; translate verbs to MI commands; extract `value` for `read_local`.
+- [ ] **Step 4: Run, verify pass** (with netcoredbg present locally; gdb leg on llamabox).
+- [ ] **Step 5: Commit** - `git add scripts/dbgsession/backends/__init__.py scripts/dbgsession/backends/base.py scripts/dbgsession/backends/mi.py scripts/dbgsession/test_mi_backend.py && git commit -m "feat(driver): Backend base + MI backend (netcoredbg + gdb)"`
+
+### Task 1.5: LldbCliBackend
+
+**Files:**
+- Create: `using-a-debugger/scripts/dbgsession/backends/lldb_cli.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_lldb_backend.py` (integration; skipif no working lldb)
+
+**Verified behavior (spike note):**
+- Launch (pipe): `<lldb> --no-use-colors <program> -- <args>`. Marker: `script print("TOKEN")`.
+- Execution verbs (`run`/`continue`/`step`) race the marker (async stop on a background thread). For those: send the command, `read_until` matches `re.compile(r"stop reason =|Process \d+ exited|exited with status")`, THEN send the marker and drain to it. For synchronous verbs (`breakpoint set`, `frame variable`) the marker can follow immediately.
+- Local read: `frame variable <name>` -> parse the value after `=`.
+- Quit: send `process kill` then `quit` (bare `quit` while stopped hangs); or `transport.close()` (kills).
+- Binary: do NOT trust `lldb` on PATH (Windows system LLVM lldb crashes - missing python311.dll). Resolve via `find_debugger("lldb")` (Task 1.7).
+
+- [ ] **Step 1: Write the failing integration test** (`test_lldb_backend.py`)
+
+```python
+import os, shutil, subprocess, sys, tempfile, pytest
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backends.lldb_cli import LldbCliBackend
+from discovery import find_debugger
+
+LLDB = find_debugger("lldb")  # working binary or None
+
+@pytest.mark.skipif(not LLDB or not shutil.which("clang++"), reason="needs working lldb + clang++")
+def test_lldb_live_session_reads_locals():
+    d = Path(tempfile.mkdtemp())
+    (d / "hello.cpp").write_text("int add(int a,int b){int s=a+b;return s;}\nint main(){return add(2,5)-7;}\n")
     exe = d / ("hello.exe" if os.name == "nt" else "hello")
     subprocess.run(["clang++", "-g", "-O0", "-o", str(exe), str(d / "hello.cpp")], check=True)
-    name = "test"
-    subprocess.run([sys.executable, CLI, "start", "--debugger", "lldb",
-                    "--session", name, "--", str(exe)], check=True, cwd=d)
+    b = LldbCliBackend("lldb", "pipe", str(exe), [], LLDB)
+    b.start()
     try:
-        subprocess.run([sys.executable, CLI, "send", "--session", name,
-                        "breakpoint set --file hello.cpp --line 1"], check=True, cwd=d)
-        run = subprocess.run([sys.executable, CLI, "send", "--session", name, "run"],
-                             check=True, cwd=d, capture_output=True, text=True)
-        assert "stop reason" in run.stdout.lower()
+        b.set_breakpoint("hello.cpp", 1)
+        out = b.run()
+        assert "stop reason" in out.lower()
+        assert b.read_local("a") == "2"
+        assert b.read_local("b") == "5"
     finally:
-        subprocess.run([sys.executable, CLI, "stop", "--session", name], cwd=d)
+        b.stop()
 ```
 
-- [ ] **Step 2: Run, verify it fails**
+- [ ] **Step 2: Run, verify fail.**
+- [ ] **Step 3: Implement `lldb_cli.py`** subclassing `Backend`, using the content-gating algorithm above for execution verbs and immediate-marker for synchronous ones.
+- [ ] **Step 4: Run, verify pass** (uses the discovered CLion-bundled lldb on chonkers).
+- [ ] **Step 5: Commit** - `git add scripts/dbgsession/backends/lldb_cli.py scripts/dbgsession/test_lldb_backend.py && git commit -m "feat(driver): lldb CLI backend (content-gated)"`
 
-Run: `cd using-a-debugger/scripts/dbgsession && python -m pytest test_cli_lldb.py -q`
-Expected: FAIL (CLI not found / no such command).
+### Task 1.6: Install cdb + CdbBackend
 
-- [ ] **Step 3: Implement client.py**
+**Files:**
+- Create: `using-a-debugger/scripts/dbgsession/backends/cdb.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_cdb_backend.py` (integration; Windows; skipif no cdb)
 
-```python
-"""Short-lived client: read the session's port file, send one command, print
-the reply. Each agent tool call is one client invocation; the debuggee stays
-alive in the server."""
-import socket
-import time
-from pathlib import Path
+- [ ] **Step 1: Install cdb (one-time machine setup, Windows)**
 
+cdb is absent. Install the Windows SDK "Debugging Tools for Windows" so `cdb.exe` exists under `%ProgramFiles(x86)%\Windows Kits\10\Debuggers\x64\`. Research the least-invasive method first (e.g. `winget install --id Microsoft.WinDbg` provides WinDbgX but NOT classic `cdb.exe`; the classic console `cdb.exe` ships with the SDK Debugging Tools feature - the standalone SDK installer with only that feature selected, or `winget install Microsoft.WindowsSDK.*` plus the Debugging Tools component). Confirm `cdb -version`. Record the exact method used in the spike note so `tooling-setup.md` (Task 2.3) documents it.
 
-def _port(session_dir, retries=50):
-    p = Path(session_dir) / "port"
-    for _ in range(retries):
-        if p.exists():
-            return int(p.read_text())
-        time.sleep(0.1)
-    raise RuntimeError(f"no live session at {session_dir} (server not started?)")
-
-
-def request(session_dir, message):
-    with socket.create_connection(("127.0.0.1", _port(session_dir)), timeout=60) as s:
-        s.sendall(message.encode("utf-8"))
-        chunks = []
-        while True:
-            b = s.recv(65536)
-            if not b:
-                break
-            chunks.append(b)
-        return b"".join(chunks).decode("utf-8")
-```
-
-- [ ] **Step 4: Implement dbg-session.py**
+- [ ] **Step 2: Write the failing integration test** (`test_cdb_backend.py`)
 
 ```python
-#!/usr/bin/env python3
-"""Drive a persistent debugger session across separate process invocations.
-
-  dbg-session.py start --debugger lldb --session bug1 -- ./prog --flag
-  dbg-session.py send  --session bug1 "breakpoint set --file x.cpp --line 42"
-  dbg-session.py send  --session bug1 "run"
-  dbg-session.py send  --session bug1 "frame variable"
-  dbg-session.py stop  --session bug1
-
-The server runs in the background holding the debuggee; send/stop are quick
-clients. Session state lives under the OS temp dir keyed by --session.
-"""
-import argparse
-import os
-import sys
-import tempfile
+import os, shutil, subprocess, sys, tempfile, pytest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backends.cdb import CdbBackend
+from discovery import find_debugger
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "dbgsession"))
-from client import request   # noqa: E402
-from server import Server    # noqa: E402
+CDB = find_debugger("cdb")
 
-
-def session_dir(name):
-    return Path(tempfile.gettempdir()) / "dbg-session" / name
-
-
-def cmd_start(args):
-    d = session_dir(args.session)
-    if (d / "port").exists():
-        print(f"session '{args.session}' already running", file=sys.stderr)
-        return 1
-    # Daemonize: re-exec self as the server loop, detached.
-    if os.environ.get("_DBG_SERVER") != "1":
-        import subprocess
-        env = {**os.environ, "_DBG_SERVER": "1"}
-        kwargs = {"env": env, "cwd": os.getcwd()}
-        if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008  # DETACHED
-        else:
-            kwargs["start_new_session"] = True
-        subprocess.Popen([sys.executable, __file__, *sys.argv[1:]], **kwargs)
-        # Wait for the port file so callers can send immediately.
-        from client import _port
-        _port(d)
-        print(f"started session '{args.session}' ({args.debugger})")
-        return 0
-    srv = Server(args.debugger, args.program, args.program_args, d)
-    srv.start()
-    srv.serve_forever()
-    return 0
-
-
-def cmd_send(args):
-    print(request(session_dir(args.session), args.command), end="")
-    return 0
-
-
-def cmd_stop(args):
+@pytest.mark.skipif(not CDB or os.name != "nt" or not shutil.which("clang++"),
+                    reason="needs cdb + clang++ on Windows")
+def test_cdb_live_session_breaks_on_function():
+    d = Path(tempfile.mkdtemp())
+    (d / "hello.cpp").write_text("int add(int a,int b){int s=a+b;return s;}\nint main(){return add(2,5)-7;}\n")
+    exe = d / "hello.exe"
+    subprocess.run(["clang++", "-g", "-gcodeview", "-O0", "-o", str(exe), str(d / "hello.cpp")], check=True)
+    b = CdbBackend("cdb", "pipe", str(exe), [], CDB)
+    b.start()
     try:
-        print(request(session_dir(args.session), "__STOP__"))
-    except RuntimeError as e:
-        print(e, file=sys.stderr)
-        return 1
-    return 0
-
-
-def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    sub = p.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("start"); s.add_argument("--debugger", required=True)
-    s.add_argument("--session", default="default")
-    s.add_argument("program"); s.add_argument("program_args", nargs="*")
-    s.set_defaults(func=cmd_start)
-    se = sub.add_parser("send"); se.add_argument("--session", default="default")
-    se.add_argument("command"); se.set_defaults(func=cmd_send)
-    st = sub.add_parser("stop"); st.add_argument("--session", default="default")
-    st.set_defaults(func=cmd_stop)
-    args = p.parse_args()
-    sys.exit(args.func(args))
-
-
-if __name__ == "__main__":
-    main()
+        b.set_breakpoint("hello.cpp", 1)   # translates to a bp on file:line
+        out = b.run()                      # g
+        assert "add" in out.lower() or "breakpoint" in out.lower()
+    finally:
+        b.stop()
 ```
 
-- [ ] **Step 5: Run, verify pass**
+- [ ] **Step 3: Verify fail.**
+- [ ] **Step 4: Implement `cdb.py`** - native command translation: `set_breakpoint` -> a `bp` on `` `file:line` ``; `run`/`cont` -> `g`; `step_over` -> `p`; `step_into` -> `t`; `read_local` -> `dv <name>` (parse `name = value`); `backtrace` -> `k`; marker `.echo TOKEN`; prompt is `N:NNN> ` (e.g. `0:000> `). cdb is synchronous; the marker follows the command. Quit: `q`.
+- [ ] **Step 5: Verify pass.**
+- [ ] **Step 6: Commit** - `git add scripts/dbgsession/backends/cdb.py scripts/dbgsession/test_cdb_backend.py && git commit -m "feat(driver): cdb backend (Windows native)"`
 
-Run: `python -m pytest test_cli_lldb.py -q`
-Expected: PASS (1 passed) where lldb + clang++ exist.
+### Task 1.7: Debugger binary discovery
 
-- [ ] **Step 6: Commit**
-```bash
-git add using-a-debugger/scripts/dbgsession/client.py using-a-debugger/scripts/dbg-session.py using-a-debugger/scripts/dbgsession/test_cli_lldb.py
-git commit -m "feat(driver): client + dbg-session CLI (start/send/stop)"
-```
+**Files:**
+- Create: `using-a-debugger/scripts/dbgsession/discovery.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_discovery.py`
 
----
+**Interfaces:**
+- Produces: `find_debugger(kind: str) -> str | None` for `kind in {"netcoredbg","gdb","lldb","cdb"}`. Returns an invocable path or None. NO hard-coded user paths - derive from `PATH`, env overrides (`NETCOREDBG`, `LLDB`, `CDB`), and platform install roots via env (`%ProgramFiles%`, `%LOCALAPPDATA%`, `%ProgramFiles(x86)%`). Consumed by the backends and the CLI.
+
+**Spike facts to encode:**
+- lldb: a `lldb` on PATH may be broken (Windows LLVM missing python311.dll). `find_debugger("lldb")` must run `<lldb> --version` and reject a non-zero/crashing exit, then fall back to a CLion-bundled lldb discovered under `%LOCALAPPDATA%\Programs\CLion\bin\lldb\win\x64\bin\lldb.exe` (glob, do not hard-code the user).
+- cdb: PATH, then `%ProgramFiles(x86)%\Windows Kits\10\Debuggers\x64\cdb.exe`.
+- netcoredbg: PATH, then `$NETCOREDBG`.
+
+- [ ] **Step 1: Write tests** - `test_discovery.py`: `find_debugger("gdb")` returns `shutil.which("gdb")` when present; an unknown kind raises; the lldb health-check rejects a stub that exits non-zero (monkeypatch a fake `lldb` script). Platform-guard the tests.
+- [ ] **Step 2: Verify fail.**
+- [ ] **Step 3: Implement `discovery.py`** with the health-check + fallbacks above.
+- [ ] **Step 4: Verify pass.**
+- [ ] **Step 5: Commit** - `git add scripts/dbgsession/discovery.py scripts/dbgsession/test_discovery.py && git commit -m "feat(driver): working-binary discovery (lldb health-check, cdb/netcoredbg fallbacks)"`
+
+### Task 1.8: Server + client + CLI (uniform verbs over a socket)
+
+**Files:**
+- Create: `using-a-debugger/scripts/dbgsession/server.py`, `client.py`, `using-a-debugger/scripts/dbg-session.py`
+- Test: `using-a-debugger/scripts/dbgsession/test_cli_e2e.py` (integration; skipif no debugger)
+
+**Interfaces:**
+- `Server(backend)` owns one Backend, listens on `127.0.0.1:0`, writes `<session_dir>/port`, and dispatches a one-line **verb** request to the backend method, returning its text. Verbs: `break FILE:LINE`, `run`, `continue`, `step`, `stepin`, `local NAME`, `bt`, `raw NATIVE...`, and `__STOP__`.
+- CLI: `dbg-session.py start --debugger {netcoredbg,gdb,lldb,cdb} [--kind pipe|pty] --session NAME -- PROGRAM [ARGS...]` (resolves the binary via `find_debugger`, builds the right Backend, daemonizes the server); `dbg-session.py send --session NAME "VERB ..."`; `dbg-session.py stop --session NAME`.
+- Session state under `tempfile.gettempdir()/dbg-session/<name>`.
+
+- [ ] **Step 1: Write the failing e2e test** (`test_cli_e2e.py`) - start a netcoredbg (or lldb) session via the CLI, `send break ...`, `send run`, `send local a`, assert the value, `stop`. Mirror the Task 1.4/1.5 setup but drive through `subprocess` calls to `dbg-session.py` (each `send` a separate process - proving state persists in the server).
+- [ ] **Step 2: Verify fail.**
+- [ ] **Step 3: Implement `server.py`** (verb -> backend dispatch + socket loop; daemonize by re-exec with `_DBG_SERVER=1`, detached, write the port file, `find_debugger` + build Backend by `--debugger`), `client.py` (read port file with retry, send verb, print reply), `dbg-session.py` (argparse start/send/stop; map `--debugger` to backend class + default transport: netcoredbg=pipe, gdb=pty on POSIX, lldb=pipe, cdb=pipe).
+- [ ] **Step 4: Verify pass.**
+- [ ] **Step 5: Commit** - `git add scripts/dbgsession/server.py scripts/dbgsession/client.py scripts/dbg-session.py scripts/dbgsession/test_cli_e2e.py && git commit -m "feat(driver): server + client + dbg-session CLI (uniform verbs)"`
 
 ## Phase 2: Reference content + orchestrator
 
