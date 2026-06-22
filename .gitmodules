@@ -58,3 +58,6 @@
 [submodule "docs-update"]
 	url = ../skills-docs-update.git
 	path = docs-update
+[submodule "using-a-debugger"]
+	path = using-a-debugger
+	url = ../skills-using-a-debugger.git

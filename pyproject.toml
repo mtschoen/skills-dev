@@ -34,6 +34,7 @@ exclude = [
     "running-spikes/**",
     "smoke-test/**",
     "unity-batchmode-worktree/**",
+    "using-a-debugger/**",
     "wrap/**",
 ]
 
