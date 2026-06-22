@@ -154,12 +154,19 @@ Record per-toolset what mixed-mode actually yields, and a verdict: **fully-worke
 
 ## Phase 1: Skill scaffold + persistent-session driver
 
-Author content in a local `using-a-debugger/` directory inside skills-dev (the repo conversion happens in Phase 4). All driver code is stdlib-only Python. The code below assumes the Phase 0 verdict was `pipe+marker`; if Phase 0 chose `sb-api`, swap `server.py`'s backend per the spike note (the client/CLI/adapters are unchanged).
+Author content in a local `using-a-debugger/` directory inside skills-dev, made into **its own git repo at Task 1.1** (the submodule conversion in Phase 4 pushes this history to Gitea/GitHub and re-adds it as a submodule; it does NOT re-init). **Working-directory convention for Phases 1-3:** all `git add`/`git commit` commands below run from **inside the `using-a-debugger/` repo**, with paths relative to it (drop the leading `using-a-debugger/` shown for clarity). All driver code is stdlib-only Python. The code below assumes the Phase 0 verdict was `pipe+marker`; if Phase 0 chose `sb-api`, swap `server.py`'s backend per the spike note (the client/CLI/adapters are unchanged).
 
 ### Task 1.1: Scaffold the skill directory
 
 **Files:**
 - Create: `using-a-debugger/SKILL.md` (stub), `using-a-debugger/README.md`, `using-a-debugger/.gitignore`, `using-a-debugger/scripts/dbgsession/__init__.py`
+
+- [ ] **Step 0: Initialize the skill repo**
+
+```bash
+mkdir -p using-a-debugger && cd using-a-debugger && git init -b main && cd ..
+```
+All Phase 1-3 commits land in this repo (run them from inside `using-a-debugger/`).
 
 - [ ] **Step 1: Create the directory tree and a SKILL.md frontmatter stub**
 
@@ -813,12 +820,11 @@ Expected: both repos exist, empty.
 
 ### Task 4.2: Init local dir, push, convert to submodule
 
-- [ ] **Step 1: Init + push the skill content to Gitea**
+- [ ] **Step 1: Push the existing skill repo to Gitea + GitHub**
+
+The repo was initialized at Task 1.1 and already holds the full Phase 1-3 TDD history. Do NOT re-init or squash; push that history.
 ```bash
 cd using-a-debugger
-git init -b main
-git add .
-git commit -m "feat: using-a-debugger skill (initial)"
 git remote add origin gitea@llamabox.sticktoitive.net:schoen/skills-using-a-debugger.git
 git push -u origin main
 git remote add github git@github.com:mtschoen/skills-using-a-debugger.git
