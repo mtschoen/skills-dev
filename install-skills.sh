@@ -12,14 +12,17 @@
 # *.pyc, .pytest_cache), which is preserved and never reported as drift
 # (see IGNORE_PATTERNS below).
 #
-# Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
-#   -y / --yes       overwrite without prompting
-#   -n / --dry-run   show what would change, don't copy
-#   --agents         install to ~/.agents/skills (canonical source of truth)
-#   --claude         install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
-#   --gemini         install to ~/.gemini/config/skills (Antigravity's global skills dir)
-#   --all            install to all known agent skill dirs
-#   positional args  limit to specific skill names (default: all)
+# Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [--setup-debuggers] [skill ...]
+#   -y / --yes         overwrite without prompting
+#   -n / --dry-run     show what would change, don't copy
+#   --agents           install to ~/.agents/skills (canonical source of truth)
+#   --claude           install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
+#   --gemini           install to ~/.gemini/config/skills (Antigravity's global skills dir)
+#   --all              install to all known agent skill dirs
+#   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
+#                      install the debuggers it drives (netcoredbg/gdb/lldb/cdb,
+#                      platform-gated, idempotent); honors -n as the script's --dry-run
+#   positional args    limit to specific skill names (default: all)
 #
 # With no agent flag, installs only to harness dirs that ALREADY EXIST on this
 # machine, among ~/.agents/skills (canonical), ~/.claude/skills (Claude), and
@@ -37,6 +40,7 @@ SRC_ROOT="${SKILLS_SRC_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"}"
 ASSUME_YES=0
 DRY_RUN=0
 DEFAULT_MODE=0
+SETUP_DEBUGGERS=0
 ABORT=0
 SELECTED=()
 DESTINATIONS=()
@@ -129,8 +133,9 @@ while [ $# -gt 0 ]; do
         --claude) add_destination claude "${HOME}/.claude/skills"; shift ;;
         --gemini) add_destination gemini "${HOME}/.gemini/config/skills"; shift ;;
         --all) add_all_destinations; shift ;;
+        --setup-debuggers) SETUP_DEBUGGERS=1; shift ;;
         -h|--help)
-            sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -321,4 +326,31 @@ fi
 if [ "$ABORT" = 1 ]; then
     echo
     echo "aborted by user (q); remaining skills skipped."
+fi
+
+# Optional: install the debuggers using-a-debugger drives. Deps are machine-global
+# (debuggers on PATH / known install roots), so this runs once from the source tree
+# regardless of how many destinations were written. Opt-in via --setup-debuggers so
+# a routine skill copy never triggers a system-package install.
+if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$ABORT" != 1 ]; then
+    setup_script="$SRC_ROOT/using-a-debugger/scripts/setup-debuggers.py"
+    if ! is_selected using-a-debugger; then
+        echo
+        echo "--setup-debuggers: skipped (using-a-debugger not in the selected skills)"
+    elif [ ! -f "$setup_script" ]; then
+        echo
+        echo "--setup-debuggers: skipped ($setup_script not found)" >&2
+    else
+        python_bin="$(command -v python3 || command -v python || true)"
+        if [ -z "$python_bin" ]; then
+            echo
+            echo "--setup-debuggers: skipped (no python3/python on PATH)" >&2
+        else
+            echo
+            echo "running debugger dependency setup ($setup_script)"
+            setup_args=()
+            [ "$DRY_RUN" = 1 ] && setup_args+=(--dry-run)
+            "$python_bin" "$setup_script" "${setup_args[@]+"${setup_args[@]}"}" || true
+        fi
+    fi
 fi

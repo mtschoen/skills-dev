@@ -13,14 +13,17 @@ rem older installs are removed -- EXCEPT content created in the DEST by
 rem running installed scripts (__pycache__, *.pyc, .pytest_cache), which is
 rem preserved and never reported as drift (see ROBO_EXCL below).
 rem
-rem Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
-rem   -y / --yes       overwrite without prompting
-rem   -n / --dry-run   show what would change, don't copy
-rem   --agents         install to %%USERPROFILE%%\.agents\skills
-rem   --claude         install to %%USERPROFILE%%\.claude\skills
-rem   --gemini         install to %%USERPROFILE%%\.gemini\config\skills
-rem   --all            install to all known agent skill dirs
-rem   positional args  limit to specific skill names (default: all)
+rem Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [--setup-debuggers] [skill ...]
+rem   -y / --yes         overwrite without prompting
+rem   -n / --dry-run     show what would change, don't copy
+rem   --agents           install to %%USERPROFILE%%\.agents\skills
+rem   --claude           install to %%USERPROFILE%%\.claude\skills
+rem   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
+rem   --all              install to all known agent skill dirs
+rem   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
+rem                      install the debuggers it drives (netcoredbg/cdb/lldb,
+rem                      platform-gated, idempotent); honors -n as the script's --dry-run
+rem   positional args    limit to specific skill names (default: all)
 rem
 rem With no agent flag, installs only to harness dirs that ALREADY EXIST on this
 rem machine (%USERPROFILE%\.agents, \.claude, \.gemini). A destination whose
@@ -36,6 +39,7 @@ if defined SKILLS_SRC_ROOT set "SRC_ROOT=%SKILLS_SRC_ROOT%"
 set "ASSUME_YES=0"
 set "DRY_RUN=0"
 set "DEFAULT_MODE=0"
+set "SETUP_DEBUGGERS=0"
 set "SELECTED="
 set "DEST_COUNT=0"
 set "ABORT=0"
@@ -59,6 +63,7 @@ if /i "%~1"=="--agents"   (call :add_dest agents "%USERPROFILE%\.agents\skills" 
 if /i "%~1"=="--claude"   (call :add_dest claude "%USERPROFILE%\.claude\skills" & shift & goto parse_args)
 if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\config\skills" & shift & goto parse_args)
 if /i "%~1"=="--all"      (call :add_all_dests & shift & goto parse_args)
+if /i "%~1"=="--setup-debuggers" (set "SETUP_DEBUGGERS=1" & shift & goto parse_args)
 if /i "%~1"=="-h"         goto usage
 if /i "%~1"=="--help"     goto usage
 set "arg=%~1"
@@ -107,7 +112,42 @@ if "!ABORT!"=="1" (
     echo aborted by user ^(q^); remaining skills skipped.
 )
 
+if "!SETUP_DEBUGGERS!"=="1" if not "!ABORT!"=="1" call :setup_debuggers
+
 endlocal
+exit /b 0
+
+:setup_debuggers
+rem Install the debuggers using-a-debugger drives. Deps are machine-global, so
+rem this runs once from the source tree regardless of destination count. Opt-in
+rem via --setup-debuggers so a routine skill copy never triggers an install.
+set "setup_script=%SRC_ROOT%\using-a-debugger\scripts\setup-debuggers.py"
+call :is_selected using-a-debugger
+if errorlevel 1 (
+    echo.
+    echo --setup-debuggers: skipped ^(using-a-debugger not in the selected skills^)
+    exit /b 0
+)
+if not exist "!setup_script!" (
+    echo.
+    echo --setup-debuggers: skipped ^(!setup_script! not found^) 1>&2
+    exit /b 0
+)
+set "PYBIN="
+where python >nul 2>nul && set "PYBIN=python"
+if not defined PYBIN ( where py >nul 2>nul && set "PYBIN=py" )
+if not defined PYBIN (
+    echo.
+    echo --setup-debuggers: skipped ^(no python/py on PATH^) 1>&2
+    exit /b 0
+)
+echo.
+echo running debugger dependency setup ^(!setup_script!^)
+if "!DRY_RUN!"=="1" (
+    "!PYBIN!" "!setup_script!" --dry-run
+) else (
+    "!PYBIN!" "!setup_script!"
+)
 exit /b 0
 
 :add_dest
@@ -296,12 +336,13 @@ exit /b 1
 :usage
 echo Install skills from this repo into one or more agent config dirs.
 echo.
-echo Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [skill ...]
-echo   -y / --yes       overwrite without prompting
-echo   -n / --dry-run   show what would change, don't copy
-echo   --agents         install to %%USERPROFILE%%\.agents\skills
-echo   --claude         install to %%USERPROFILE%%\.claude\skills
-echo   --gemini         install to %%USERPROFILE%%\.gemini\config\skills
-echo   --all            install to all known agent skill dirs
-echo   positional args  limit to specific skill names ^(default: all^)
+echo Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [--setup-debuggers] [skill ...]
+echo   -y / --yes         overwrite without prompting
+echo   -n / --dry-run     show what would change, don't copy
+echo   --agents           install to %%USERPROFILE%%\.agents\skills
+echo   --claude           install to %%USERPROFILE%%\.claude\skills
+echo   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
+echo   --all              install to all known agent skill dirs
+echo   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py
+echo   positional args    limit to specific skill names ^(default: all^)
 exit /b 0
