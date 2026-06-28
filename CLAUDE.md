@@ -1,6 +1,6 @@
 # skills-dev — Claude Code instructions
 
-This repo is the umbrella that ties together each skill's own submodule. Every top-level directory other than `.claude/`, `docs/`, `scripts/`, `LICENSE`, and `install-skills.*` is a git submodule pointing at that skill's own repository, mirrored on Gitea (primary) and GitHub (public).
+This repo is the umbrella that ties together each skill's own submodule. Every top-level directory other than `.claude/`, `docs/`, `scripts/`, `LICENSE`, and `install-skills.*` is a git submodule pointing at that skill's own repository, hosted on GitHub (primary) and mirrored to Gitea (secondary). **Always push to both hosts when both remotes are configured** so they don't drift.
 
 ## Adding a new skill
 
@@ -9,20 +9,19 @@ This repo is the umbrella that ties together each skill's own submodule. Every t
 The workflow:
 
 1. Author the skill content locally in a temporary `<name>/` directory inside skills-dev.
-2. Create the remote repos:
-   - Gitea: `schoen/skills-<name>` (**public** — umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs; the run token only covers skills-dev itself). Owned by `schoen`, so use `~/.gitea-token` (admin) — `~/.gitea-token-claude` can't create under another user's namespace. Also enable the Actions unit if the repo gets CI (`PATCH {"has_actions": true}` — disabled by default on API-created repos).
-   - GitHub: `mtschoen/skills-<name>` (public). Use `gh repo create`.
-3. Init the local dir as git, commit, push to Gitea. (Use the default Matt Schoen git identity — the global CLAUDE.md's bot-identity pattern is only for PRs where Gitea's self-approval block matters, not for direct main-branch commits.)
+2. Create the remote repos on **both** hosts (both **public** — umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs; the run token only covers skills-dev itself):
+   - GitHub (**primary**): `mtschoen/skills-<name>`. `gh repo create mtschoen/skills-<name> --public`.
+   - Gitea (**secondary mirror**): `schoen/skills-<name>`. Owned by `schoen`, so use `~/.gitea-token` (admin) — `~/.gitea-token-claude` can't create under another user's namespace. Enable the Actions unit if the repo gets CI (`PATCH {"has_actions": true}` — disabled by default on API-created repos).
+3. Init the local dir as git, commit, and push to **both** hosts (GitHub first, then Gitea). (Use the default Matt Schoen git identity — the global CLAUDE.md's bot-identity pattern is only for PRs where Gitea's self-approval block matters, not for direct main-branch commits.)
 4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
-5. Add as submodule. **Sequencing pitfall:** `git submodule add ../skills-<name>.git <name>` resolves the relative URL against whichever superproject remote git picks first (alphabetically `github` before `origin`). At this step GitHub is still empty (only Gitea has the initial commit from step 3), so the relative-URL form fails with `cloned an empty repository / branch yet to be born / unable to checkout submodule`. Use the **absolute Gitea URL**, then rewrite `.gitmodules` to the relative form:
+5. Add as submodule. The `.gitmodules` **relative URL** `../skills-<name>.git` resolves against skills-dev's `origin` (GitHub), which already has the initial commit from step 3, so the plain relative form works:
 
    ```bash
-   git submodule add gitea@llamabox.sticktoitive.net:schoen/skills-<name>.git <name>
-   git config -f .gitmodules submodule.<name>.url ../skills-<name>.git
+   git submodule add ../skills-<name>.git <name>
    ```
 
-   Do **not** run `git submodule sync` after the rewrite — it can propagate the relative URL into the submodule's working-tree `origin` and break daily git ops. The working-tree origin should remain the SSH Gitea URL set by `submodule add`.
-6. Configure per-submodule remotes: `origin` → Gitea (SSH, already set by step 5), `github` → GitHub (SSH, `git@github.com:mtschoen/skills-<name>.git`). Push to GitHub: `git -C <name> push github main` — **no `-u`**, since main's upstream should stay at `origin/main` (set by step 5). Using `-u github` here silently retargets the upstream and breaks the convention.
+   (Historically this needed the **absolute Gitea URL** because GitHub was created empty and pushed last; with GitHub primary and pushed first, that pitfall is gone.) Do **not** run `git submodule sync` afterward — it can propagate the relative URL into the submodule's working-tree `origin` and break daily git ops. The working-tree `origin` should remain the absolute GitHub SSH URL set by `submodule add`.
+6. Configure per-submodule remotes: `origin` → GitHub (SSH, set by step 5), `gitea` → Gitea (SSH, `gitea@llamabox:schoen/skills-<name>.git`). **Always push to both hosts when both remotes exist** — `git -C <name> push origin main && git -C <name> push gitea main`. Keep main's upstream at `origin/main` (GitHub); don't pass `-u` to the gitea push.
 7. Confirm `install-skills.{sh,bat}` picks up the new skill via dry run: `./install-skills.sh -n <name>`. (For fresh installs the dry-run output is just one line: `install <name> -> ~/.claude/skills/<name>`. That's normal — file-listing diffs only appear for already-installed skills.)
 8. Commit the submodule pointer in skills-dev.
 9. Run `scripts/push-all.{sh,bat}` to push both hosts.
@@ -33,7 +32,7 @@ The detailed concrete steps (current Gitea endpoints, API tokens, curl commands,
 
 - Repo names use the `skills-<name>` prefix on **both** hosts. The skills-dev submodule path is the bare `<name>` (no prefix).
 - `.gitmodules` uses **relative URLs** (`../skills-<name>.git`) so the same `.gitmodules` resolves correctly whether the index was cloned from Gitea or GitHub. (Established via the rewrite in step 5 above.)
-- Per-submodule remote convention: `origin` → Gitea (SSH), `github` → GitHub (SSH).
+- Per-submodule remote convention: `origin` → GitHub (SSH, **primary**), `gitea` → Gitea (SSH, **mirror**). **Always push to both when both are configured** so the hosts don't drift. (Some older skill repos instead carry a redundant `github` remote duplicating `origin`/GitHub and have no `gitea` remote — harmless; `push-all` pushes every configured remote name and skips the rest, so retrofitting them is just adding a `gitea` remote.)
 - Don't run `git submodule sync` after manually fixing a submodule's `origin` URL — it can overwrite working-tree URLs from `.gitmodules` resolution. The submodule directories in skills-dev have full `.git/` dirs (not gitfiles), so daily git ops read from `<sub>/.git/config`, not `.git/modules/<sub>/config`.
 - A skill ships extra top-level content (beyond `SKILL.md` + `scripts/` + `references/` + `assets/`) by listing it in a `.skillpack` file at the skill's repo root. Current users: `progress-beacon` (`hooks/`), `cost-estimator` (`REPORT_TEMPLATE.md`). The `.skillpack` file is itself never installed.
 
@@ -60,8 +59,8 @@ There is also a committed git hook at `hooks/pre-commit` that is the authoritati
 
 ## Working across all submodules
 
-- `scripts/push-all.{sh,bat}` — push every active submodule plus the umbrella to both `origin` (Gitea) and `github` (GitHub). Each push is pre-flighted: fetch the remote and classify local main vs remote/main as up-to-date / FF / behind / diverged. Non-FF states are reported with a clear reason ("behind by N", "DIVERGED: ahead N, behind M") and the push is skipped instead of failing with a generic line. Errors don't halt the run, but the script exits non-zero with a summary of all issues at the end.
-- `scripts/pull-all.{sh,bat}` — pull latest from Gitea on every submodule plus the umbrella.
+- `scripts/push-all.{sh,bat}` — push every active submodule plus the umbrella to every configured remote (`origin`/GitHub primary, `gitea`/Gitea mirror, and the legacy `github` name where present), skipping any a given repo lacks. Each push is pre-flighted: fetch the remote and classify local main vs remote/main as up-to-date / FF / behind / diverged. Non-FF states are reported with a clear reason ("behind by N", "DIVERGED: ahead N, behind M") and the push is skipped instead of failing with a generic line. Errors don't halt the run, but the script exits non-zero with a summary of all issues at the end.
+- `scripts/pull-all.{sh,bat}` — pull latest from `origin` (GitHub) on every submodule plus the umbrella.
 
 **Fresh-clone setup:** run `git config submodule.recurse true` once per clone (it can't be committed — `.git/config` is per-clone). Without it, pulling the umbrella advances the recorded submodule pointers but leaves local checkouts behind, producing the recurring `M <submodule> (new commits)` drift. See README "Cloning" for the trade-off (pulls then detach submodule HEADs; pull-all re-attaches to main).
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Push every active submodule + skills-dev itself to `origin` (Gitea) and
-# `github` (GitHub). Pass `--remote <name>` to add further remotes. Each push
+# Push every active submodule + skills-dev itself to every configured remote
+# (`origin`/GitHub primary, `gitea`/Gitea mirror, legacy `github` where
+# present), skipping any a repo lacks. Pass `--remote <name>` to add more. Each push
 # is pre-flighted: fetch the remote and classify local main vs remote/main as
 # up-to-date / FF / behind / diverged. A non-FF state is reported with a
 # clear reason instead of a generic "FAILED" line. Errors don't halt the
@@ -11,16 +12,16 @@
 
 cd "$(dirname "$0")/.." || exit 1
 
-remotes=(origin github)
+remotes=(origin gitea github)
 failures=()
 
 usage() {
   cat <<'EOF'
 Usage: scripts/push-all.sh [--remote <name>]
 
-Push every active submodule plus skills-dev itself to origin (Gitea) and
-github (GitHub). If --remote is provided, also push to that remote where
-it exists.
+Push every active submodule plus skills-dev itself to every configured remote
+(origin/GitHub primary, gitea/Gitea mirror, legacy github), skipping any a repo
+lacks. If --remote is provided, also push to that remote where it exists.
 EOF
 }
 
