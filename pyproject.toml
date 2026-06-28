@@ -23,6 +23,7 @@ exclude = [
     "find-task/**",
     "fleet-orchestration/**",
     "maintaining-full-coverage/**",
+    "memory-cleanup/**",
     "progress-beacon/**",
     "project-maintenance/**",
     "promote-project/**",

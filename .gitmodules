@@ -61,3 +61,6 @@
 [submodule "using-a-debugger"]
 	path = using-a-debugger
 	url = ../skills-using-a-debugger.git
+[submodule "memory-cleanup"]
+	path = memory-cleanup
+	url = ../skills-memory-cleanup.git
