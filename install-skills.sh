@@ -203,7 +203,12 @@ confirm() {
     if [ "$ASSUME_YES" = 1 ]; then return 0; fi
     local reply
     if [ -r /dev/tty ]; then
-        read -r -p "$prompt [y/N/q=quit] " reply </dev/tty
+        # -r can succeed while opening fails (e.g. detached agent shells); treat a
+        # failed read as no tty rather than crashing on an unset reply.
+        if ! read -r -p "$prompt [y/N/q=quit] " reply </dev/tty; then
+            echo "  (no usable tty; skipping. re-run with -y to overwrite.)" >&2
+            return 1
+        fi
     elif [ -t 0 ]; then
         read -r -p "$prompt [y/N/q=quit] " reply
     else
