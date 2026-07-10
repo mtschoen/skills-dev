@@ -18,10 +18,9 @@ After cloning, opt this clone into recursive submodule updates so a later `git p
 
 ```bash
 git config submodule.recurse true
-python3 scripts/setup_remotes.py   # git push origin -> BOTH gitea and github
 ```
 
-The second command sets dual-host push URLs on `origin` for the umbrella and every submodule (derived from each repo's basename, so it works whether the clone came from Gitea or GitHub) — without it, plain pushes land on one host only and the hosts drift apart. Both settings live in `.git/config` and **cannot be committed**, so run them once per clone — including on every machine you work from. It does not cover `git clone` itself (hence `--recurse-submodules` above). Trade-off: `git pull` then checks submodules out at the recorded commit (detached HEAD); `scripts/pull-all.sh` re-attaches them to `main`.
+This lives in `.git/config` and **cannot be committed**, so run it once per clone — including on every machine you work from. It does not cover `git clone` itself (hence `--recurse-submodules` above). Trade-off: `git pull` then checks submodules out at the recorded commit (detached HEAD); `scripts/pull-all.sh` re-attaches them to `main`.
 
 ## Installing skills
 
@@ -61,9 +60,6 @@ Each skill repo has `SKILL.md` at its root. The installer ships only **git-track
 ./scripts/pull-all.sh --remote github
 ./scripts/push-all.sh --remote github
 ```
-
-`scripts/setup_remotes.py` (see Cloning above) makes every plain `git push origin` update both hosts, so push-all's multi-remote sweep is a backstop rather than the only path to parity.
-
 ## Layout
 
 ```text
