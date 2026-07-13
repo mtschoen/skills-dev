@@ -60,6 +60,7 @@ Each skill repo has `SKILL.md` at its root. The installer ships only **git-track
 ./scripts/pull-all.sh --remote github
 ./scripts/push-all.sh --remote github
 ```
+
 ## Layout
 
 ```text
