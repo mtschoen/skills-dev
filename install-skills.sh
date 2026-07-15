@@ -395,7 +395,7 @@ fi
 # (debuggers on PATH / known install roots), so this runs once from the source tree
 # regardless of how many destinations were written. Opt-in via --setup-debuggers so
 # a routine skill copy never triggers a system-package install.
-if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$ABORT" != 1 ]; then
+if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$CHECK_MODE" != 1 ] && [ "$ABORT" != 1 ]; then
     setup_script="$SRC_ROOT/using-a-debugger/scripts/setup-debuggers.py"
     if ! is_selected using-a-debugger; then
         echo

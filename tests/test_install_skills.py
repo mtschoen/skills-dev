@@ -229,6 +229,52 @@ def test_setup_debuggers_runs_selected_skill_script(tmp_repo, tmp_path):
     assert "debugger setup invoked" in result.stdout
 
 
+def test_check_skips_debugger_setup_on_clean_install(tmp_repo, tmp_path):
+    make_skill(
+        tmp_repo,
+        "using-a-debugger",
+        files={
+            "SKILL.md": "# using-a-debugger\n",
+            "scripts/setup-debuggers.py": "# test probe\n",
+        },
+    )
+    base_env = {"HOME": str(tmp_path)}
+    installed = run_install_script(
+        tmp_repo,
+        "--agents",
+        "-y",
+        "using-a-debugger",
+        env_override=base_env,
+    )
+    assert installed.returncode == 0
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "debugger-setup-ran"
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(f"#!/usr/bin/env bash\ntouch '{marker}'\n")
+    fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
+    fake_bin_path = subprocess.run(
+        ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+    ).stdout.strip()
+    shell_path = subprocess.run(
+        ["bash", "-lc", 'printf %s "$PATH"'], capture_output=True, check=True, text=True
+    ).stdout
+    env = {"HOME": str(tmp_path), "PATH": f"{fake_bin_path}:{shell_path}"}
+
+    result = run_install_script(
+        tmp_repo,
+        "--check",
+        "--agents",
+        "--setup-debuggers",
+        "using-a-debugger",
+        env_override=env,
+    )
+
+    assert result.returncode == 0
+    assert not marker.exists()
+
+
 class TestInstallContent:
     def test_yes_installs_skill_md(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "yes-skill")
@@ -360,6 +406,106 @@ class TestExistingOnlyDefault:
 
 
 class TestHermesDestination:
+    def test_hermes_home_wins_over_localappdata_and_home(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "hermes-precedence")
+        hermes_home = tmp_path / "explicit-hermes-home"
+        localappdata = tmp_path / "local-app-data"
+        result = run_install_script(
+            tmp_repo,
+            "--hermes",
+            "-y",
+            "hermes-precedence",
+            env_override={
+                "HERMES_HOME": str(hermes_home),
+                "LOCALAPPDATA": str(localappdata),
+                "HOME": str(tmp_path / "home"),
+                "OSTYPE": "msys",
+            },
+        )
+        assert result.returncode == 0
+        assert (hermes_home / "skills" / "hermes-precedence" / "SKILL.md").exists()
+        assert not (localappdata / "hermes").exists()
+
+    def test_msys_uses_localappdata_when_hermes_home_is_absent(
+        self, tmp_repo, tmp_path
+    ):
+        make_skill(tmp_repo, "hermes-localappdata")
+        localappdata = tmp_path / "local-app-data"
+        result = run_install_script(
+            tmp_repo,
+            "--hermes",
+            "-y",
+            "hermes-localappdata",
+            env_override={
+                "HERMES_HOME": "",
+                "LOCALAPPDATA": str(localappdata),
+                "HOME": str(tmp_path / "home"),
+                "OSTYPE": "msys",
+            },
+        )
+        assert result.returncode == 0
+        assert (
+            localappdata / "hermes" / "skills" / "hermes-localappdata" / "SKILL.md"
+        ).exists()
+
+    def test_hermes_uses_home_fallback_when_other_sources_are_absent(
+        self, tmp_repo, tmp_path
+    ):
+        make_skill(tmp_repo, "hermes-home-fallback")
+        home = tmp_path / "home"
+        result = run_install_script(
+            tmp_repo,
+            "--hermes",
+            "-y",
+            "hermes-home-fallback",
+            env_override={"HERMES_HOME": "", "LOCALAPPDATA": "", "HOME": str(home)},
+        )
+        assert result.returncode == 0
+        assert (
+            home / ".hermes" / "skills" / "hermes-home-fallback" / "SKILL.md"
+        ).exists()
+
+    def test_hermes_home_is_normalized_with_cygpath(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "hermes-normalized")
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        normalized_home = tmp_path / "normalized-hermes-home"
+        real_cygpath = shutil.which("cygpath")
+        assert real_cygpath is not None
+        fake_cygpath = fake_bin / "cygpath"
+        fake_cygpath.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "$1" = -u ]; then\n'
+            f"    printf '%s\\n' '{normalized_home}'\n"
+            "else\n"
+            f"    '{real_cygpath}' \"$@\"\n"
+            "fi\n"
+        )
+        fake_cygpath.chmod(fake_cygpath.stat().st_mode | stat.S_IXUSR)
+        fake_bin_path = subprocess.run(
+            ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+        ).stdout.strip()
+        shell_path = subprocess.run(
+            ["bash", "-lc", 'printf %s "$PATH"'],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+
+        result = run_install_script(
+            tmp_repo,
+            "--hermes",
+            "-y",
+            "hermes-normalized",
+            env_override={
+                "HERMES_HOME": r"C:\\un-normalized-hermes-home",
+                "HOME": str(tmp_path / "home"),
+                "PATH": f"{fake_bin_path}:{shell_path}",
+            },
+        )
+        assert result.returncode == 0
+        assert (normalized_home / "skills" / "hermes-normalized" / "SKILL.md").exists()
+
     def test_hermes_flag_installs_to_override_home(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "hermes-skill")
         hermes_home = tmp_path / "hermes-home"
