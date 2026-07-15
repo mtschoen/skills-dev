@@ -25,6 +25,7 @@ exclude = [
     "maintaining-full-coverage/**",
     "memory-cleanup/**",
     "progress-beacon/**",
+    "project-lock/**",
     "project-maintenance/**",
     "promote-project/**",
     "pushback/**",
