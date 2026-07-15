@@ -105,6 +105,20 @@ if command -v cmd.exe >/dev/null 2>&1; then
     if [ "$bat_install_rc" -eq 0 ]; then pass ".bat: --hermes installs cleanly"; else fail ".bat: --hermes install exit $bat_install_rc"; fi
     assert_install ".bat Hermes" "$HOME_HERMES/skills"
 
+    echo "[.bat] source enumeration failure preserves installed destination"
+    managed_before_failure="$(cat "$HOME_HERMES/skills/demoskill/SKILL.md")"
+    mv "$SRC2/demoskill/.git/HEAD" "$SRC2/demoskill/.git/HEAD.broken"
+    USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --hermes demoskill >/dev/null 2>&1
+    bat_source_failure_rc=$?
+    if [ "$bat_source_failure_rc" -ne 0 ]; then pass ".bat: source enumeration failure is fatal"; else fail ".bat: source enumeration failure exit $bat_source_failure_rc"; fi
+    if [ "$(cat "$HOME_HERMES/skills/demoskill/SKILL.md")" = "$managed_before_failure" ]; then
+        pass ".bat: source enumeration failure preserves destination"
+    else
+        fail ".bat: source enumeration failure modified destination"
+    fi
+    mv "$SRC2/demoskill/.git/HEAD.broken" "$SRC2/demoskill/.git/HEAD"
+
     USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" --check --hermes demoskill >/dev/null
     bat_clean_check_rc=$?

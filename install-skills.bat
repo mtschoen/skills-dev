@@ -99,7 +99,7 @@ set "BASELINE= SKILL.md scripts references assets "
 
 set "FOUND=0"
 for /d %%D in ("%SRC_ROOT%\*") do (
-    if not "!ABORT!"=="1" (
+    if not "!ABORT!"=="1" if not "!FATAL!"=="1" (
         set "name=%%~nxD"
         set "src=%%~fD"
         if exist "!src!\.git" (
@@ -220,7 +220,7 @@ exit /b 0
 call :is_selected "%~1"
 if errorlevel 1 exit /b 0
 for /l %%I in (1,1,%DEST_COUNT%) do (
-    if not "!ABORT!"=="1" call :install_skill "%~1" "%~2" "!DEST_%%I_NAME!" "!DEST_%%I_PATH!"
+    if not "!ABORT!"=="1" if not "!FATAL!"=="1" call :install_skill "%~1" "%~2" "!DEST_%%I_NAME!" "!DEST_%%I_PATH!"
 )
 exit /b 0
 
@@ -247,6 +247,12 @@ set "staging=%TEMP%\skillinst-!agent!-!n!-%RANDOM%%RANDOM%"
 if exist "!staging!" rmdir /s /q "!staging!"
 mkdir "!staging!"
 call :build_staging "!src!" "!staging!"
+if errorlevel 1 (
+    echo staging failed for !n! ^(!agent!^); destination was not changed. 1>&2
+    if exist "!staging!" rmdir /s /q "!staging!"
+    set "FATAL=1"
+    exit /b 1
+)
 
 if not exist "!dest!" (
     echo install !n! -^> !dest! ^(!agent!^)
@@ -329,6 +335,7 @@ exit /b 0
 :build_staging
 set "bs_src=%~1"
 set "bs_staging=%~2"
+set "bs_listing=!bs_staging!\.tracked-files.txt"
 rem include set = baseline + .skillpack extras (space-delimited, trimmed)
 set "INCLSET=%BASELINE%"
 if exist "!bs_src!\.skillpack" (
@@ -339,8 +346,17 @@ if exist "!bs_src!\.skillpack" (
         if not "!e!"=="" set "INCLSET=!INCLSET!!e! "
     )
 )
+rem Capture enumeration first: for /f does not expose the command's exit code.
+git -C "!bs_src!" ls-files > "!bs_listing!"
+set "bs_rc=!errorlevel!"
+if not "!bs_rc!"=="0" (
+    echo git ls-files failed for !bs_src! ^(exit !bs_rc!^) 1>&2
+    del "!bs_listing!" 2>nul
+    rmdir /s /q "!bs_staging!"
+    exit /b 1
+)
 rem copy each tracked file whose top-level component is in the include set
-for /f "usebackq delims=" %%F in (`git -C "!bs_src!" ls-files`) do (
+for /f "usebackq delims=" %%F in ("!bs_listing!") do (
     set "rel=%%F"
     for /f "tokens=1 delims=/" %%T in ("%%F") do set "top=%%T"
     set "hit="
@@ -353,6 +369,7 @@ for /f "usebackq delims=" %%F in (`git -C "!bs_src!" ls-files`) do (
         )
     )
 )
+del "!bs_listing!" 2>nul
 exit /b 0
 
 :confirm

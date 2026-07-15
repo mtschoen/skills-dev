@@ -73,7 +73,7 @@ skills-dev/
 │   ├── SKILL.md         # the skill itself
 │   ├── evals/           # eval harness (dev-only, not installed)
 │   └── ...
-├── install-skills.sh    # install -> ~/.agents/skills/ (+ Claude & Antigravity mirrors)
+├── install-skills.sh    # install -> selected runtime destinations
 ├── install-skills.bat
 └── scripts/
     ├── push-all.sh
