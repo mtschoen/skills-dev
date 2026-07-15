@@ -24,29 +24,33 @@ This lives in `.git/config` and **cannot be committed**, so run it once per clon
 
 ## Installing skills
 
-`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. The canonical source of truth is `~/.agents/skills/`, which **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills/)) both read natively as a global skills path. Two harnesses can't read it and so are kept as mirrors:
+`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. **Author skills in their own source repositories** (the top-level submodules in this umbrella); installed copies are generated mirrors and should not be edited directly.
 
-- **Claude Code** is hardcoded to `~/.claude/skills/` with no setting to redirect it ([anthropics/claude-code#22902](https://github.com/anthropics/claude-code/issues/22902), [#33957](https://github.com/anthropics/claude-code/issues/33957)).
-- **Antigravity** loads global skills from `~/.gemini/skills/`; its `.agents/skills` is workspace-only.
+`~/.agents/skills/` is the canonical runtime location read natively by **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills)). Claude Code and Antigravity use their own runtime locations, so the installer can mirror the same tracked skill content to them. Hermes is an active destination too: it uses `<Hermes home>/skills`.
 
-So the default install writes to all three — `~/.agents/skills/` plus mirrors at `~/.claude/skills/` and `~/.gemini/skills/` — rather than relying on symlinks. Pass agent flags to narrow the targets.
+Hermes home resolution is, in order: `HERMES_HOME`, `LOCALAPPDATA/hermes` on Windows, then `~/.hermes` (or `%USERPROFILE%\.hermes` in the batch installer). With no destination flag, the installer selects only harness homes that already exist, including Hermes; it will not create unused runtime homes. Explicit destination flags and `--all` may create a missing destination.
 
 ```bash
-./install-skills.sh           # default: ~/.agents/skills + ~/.claude/skills + ~/.gemini/skills
-./install-skills.sh -y        # overwrite without prompting
-./install-skills.sh -n        # dry run; show what would change
-./install-skills.sh --agents  # only the canonical ~/.agents/skills
-./install-skills.sh --claude smoke-test pushback   # limit destinations and skills
+./install-skills.sh                    # existing destinations only
+./install-skills.sh -y                 # overwrite without prompting
+./install-skills.sh -n                 # dry run; show what would change
+./install-skills.sh --agents           # only the canonical ~/.agents/skills
+./install-skills.sh --hermes smoke-test pushback  # Hermes mirror, selected skills
+./install-skills.sh --all -y           # create/update every known destination
+./install-skills.sh --check --hermes   # read-only drift check for Hermes
 ```
+
+`--check` never prompts or writes. It exits `0` when the selected mirrors are clean, `1` when drift (including a missing destination) is found, and `2` for argument errors. It only previews symbolic `+`/`~`/`-` drift details; apply deliberately with a normal installer invocation.
 
 Supported destination flags:
 
 | Flag | Destination |
 |---|---|
 | `--agents` | `~/.agents/skills` (canonical; read natively by Codex and opencode) |
-| `--claude` | `~/.claude/skills` (Claude Code's mirror) |
-| `--gemini` | `~/.gemini/skills` (Antigravity's global skills dir) |
-| `--all` | all of the above |
+| `--claude` | `~/.claude/skills` (Claude Code mirror) |
+| `--gemini` | `~/.gemini/config/skills` (Antigravity global skills directory) |
+| `--hermes` | `<Hermes home>/skills` (generated Hermes mirror) |
+| `--all` | all of the above; may create missing homes |
 
 Each skill repo has `SKILL.md` at its root. The installer ships only **git-tracked** files, filtered to a top-level allowlist: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root. Dev-only content (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.) is excluded by omission, and generated junk can never leak because untracked files are never shipped.
 

@@ -64,7 +64,7 @@ echo stale > "$HOME_SH/.claude/skills/demoskill/reports/old.txt"
 echo stale > "$HOME_SH/.claude/skills/demoskill/scripts/__pycache__/x.pyc"
 HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_absent ".sh: stale reports/ purged"  "$HOME_SH/.claude/skills/demoskill/reports"
-assert_absent ".sh: stale __pycache__ purged" "$HOME_SH/.claude/skills/demoskill/scripts/__pycache__"
+assert_exists ".sh: stale __pycache__ preserved" "$HOME_SH/.claude/skills/demoskill/scripts/__pycache__/x.pyc"
 
 echo "[.sh] manifest include (hooks/)"
 printf '%s\n' "hooks/" > "$SRC/demoskill/.skillpack"
@@ -95,6 +95,32 @@ if command -v cmd.exe >/dev/null 2>&1; then
     USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude demoskill >/dev/null
     assert_absent ".bat: stale reports/ purged" "$HOME_BAT/.claude/skills/demoskill/reports"
+
+    echo "[.bat] Hermes install and read-only check"
+    HOME_HERMES="$WORK/home_hermes"; mkdir -p "$HOME_HERMES"
+    HOME_HERMES_WIN="$(cygpath -w "$HOME_HERMES")"
+    USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --hermes demoskill >/dev/null
+    bat_install_rc=$?
+    if [ "$bat_install_rc" -eq 0 ]; then pass ".bat: --hermes installs cleanly"; else fail ".bat: --hermes install exit $bat_install_rc"; fi
+    assert_install ".bat Hermes" "$HOME_HERMES/skills"
+
+    USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" --check --hermes demoskill >/dev/null
+    bat_clean_check_rc=$?
+    if [ "$bat_clean_check_rc" -eq 0 ]; then pass ".bat: clean Hermes check exits 0"; else fail ".bat: clean Hermes check exit $bat_clean_check_rc"; fi
+
+    before_check="$(cat "$HOME_HERMES/skills/demoskill/SKILL.md")"
+    printf '%s\n' "BATCH-CHECK-DRIFT" >> "$SRC2/demoskill/SKILL.md"
+    USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" --check --hermes demoskill >/dev/null
+    bat_drift_check_rc=$?
+    if [ "$bat_drift_check_rc" -eq 1 ]; then pass ".bat: drifted Hermes check exits 1"; else fail ".bat: drifted Hermes check exit $bat_drift_check_rc"; fi
+    if [ "$(cat "$HOME_HERMES/skills/demoskill/SKILL.md")" = "$before_check" ]; then
+        pass ".bat: drifted Hermes check does not write"
+    else
+        fail ".bat: drifted Hermes check modified destination"
+    fi
 else
     echo "[.bat] skipped (no cmd.exe on this platform)"
 fi
