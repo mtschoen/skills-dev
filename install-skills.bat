@@ -121,7 +121,7 @@ if "!ABORT!"=="1" (
     echo aborted by user ^(q^); remaining skills skipped.
 )
 
-if "!SETUP_DEBUGGERS!"=="1" if "!CHECK_MODE!"=="0" if not "!ABORT!"=="1" call :setup_debuggers
+if "!SETUP_DEBUGGERS!"=="1" if "!CHECK_MODE!"=="0" if not "!ABORT!"=="1" if not "!FATAL!"=="1" call :setup_debuggers
 
 if "!FATAL!"=="1" (
     endlocal
