@@ -23,12 +23,10 @@ def home_with(tmp_path, *harness_dirs):
     return {"HOME": str(tmp_path)}
 
 
-class TestMirrorPreservesDestinationOutput:
-    """Dest-only generated output (reports/, __pycache__) must survive a
-    reinstall on both mirror paths, including the no-rsync fallback that
-    Windows Git-Bash takes."""
+class TestMirrorPreservesCaches:
+    """Caches survive reinstalls; unshipped output and stale files do not."""
 
-    def test_reports_and_junk_survive_update_install(self, tmp_repo, tmp_path):
+    def test_caches_survive_but_unshipped_output_is_removed(self, tmp_repo, tmp_path):
         env = home_with(tmp_path, ".claude")
         make_skill(tmp_repo, "keeper", files={"SKILL.md": "# keeper v1\n"})
         result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
@@ -54,7 +52,7 @@ class TestMirrorPreservesDestinationOutput:
         result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
         assert result.returncode == 0
         assert (dest / "SKILL.md").read_text() == "# keeper v2\n"
-        assert (dest / "reports" / "april.md").read_text() == "spend report\n"
+        assert not (dest / "reports").exists()
         assert (dest / "__pycache__" / "x.pyc").exists()
         assert not (dest / "stale.txt").exists()
 

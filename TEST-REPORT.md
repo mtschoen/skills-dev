@@ -1,9 +1,9 @@
-skills-dev test report — 2026-06-10
+skills-dev test report - 2026-07-15
 ═══════════════════════════════════════════
 
 Status:   PASS (lint gate + tests)
-Mode:     maintain (portability sweep + installer data-loss fix)
-Git:      portability-sweep commit, 2026-06-10 (parent c706cad)
+Mode:     maintain (stale installer mirror-contract test correction)
+Git:      pre-change parent cdee16c
 
 Lint:     ruff 0.15.15:   0 findings   (ruff check scripts/ tests/)
           ruff format:    0 to reformat (ruff format --check scripts/ tests/)
@@ -11,8 +11,8 @@ Lint:     ruff 0.15.15:   0 findings   (ruff check scripts/ tests/)
                           verified locally on LF-normalized content — the Windows
                           working tree is CRLF via autocrlf, which trips SC1017
                           noise; CI's LF checkout is the authoritative run)
-          aislop 0.9.4:   100/100 score, 0 issues, 4 files (aislop ci .)
-                          ci.failBelow 100 — format+lint engines off (ruff owns
+          aislop 0.12.3:  100/100 score, 0 issues, 5 files (aislop ci .)
+                          ci.failBelow 100; format+lint engines off (ruff owns
                           those); telemetry off.
           0 per-case suppressions
           0 documented exceptions
@@ -45,4 +45,4 @@ Gate commands (tier 2 — the authoritative local check):
   ruff check scripts/ tests/
   ruff format --check scripts/ tests/
   shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
-  npx -y aislop@0.9.4 ci
+  npx -y @schoen/aislop@0.12.3 ci
