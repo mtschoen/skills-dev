@@ -23,15 +23,15 @@ def home_with(tmp_path, *harness_dirs):
     dirs (e.g. ".claude") pre-created so default mode treats them as present."""
     for harness in harness_dirs:
         (tmp_path / harness).mkdir(parents=True, exist_ok=True)
-    return {"HOME": str(tmp_path)}
+    return {"HOME": str(tmp_path), "HERMES_HOME": str(tmp_path / "hermes-home")}
 
 
 class TestMirrorPreservesDestinationOutput:
-    """Dest-only generated output (reports/, __pycache__) must survive a
+    """Dest-only generated output (__pycache__) must survive a
     reinstall on both mirror paths, including the no-rsync fallback that
     Windows Git-Bash takes."""
 
-    def test_reports_and_junk_survive_update_install(self, tmp_repo, tmp_path):
+    def test_junk_survives_and_managed_entries_cleanup(self, tmp_repo, tmp_path):
         env = home_with(tmp_path, ".claude")
         make_skill(tmp_repo, "keeper", files={"SKILL.md": "# keeper v1\n"})
         result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
@@ -57,7 +57,7 @@ class TestMirrorPreservesDestinationOutput:
         result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
         assert result.returncode == 0
         assert (dest / "SKILL.md").read_text() == "# keeper v2\n"
-        assert (dest / "reports" / "april.md").read_text() == "spend report\n"
+        assert not (dest / "reports").exists()
         assert (dest / "__pycache__" / "x.pyc").exists()
         assert not (dest / "stale.txt").exists()
 
@@ -78,7 +78,14 @@ class TestHelpAndUsage:
 
     def test_help_lists_all_destination_flags(self, tmp_repo):
         result = run_install_script(tmp_repo, "--help")
-        for flag in ["--agents", "--claude", "--gemini", "--all"]:
+        for flag in [
+            "--agents",
+            "--claude",
+            "--gemini",
+            "--hermes",
+            "--all",
+            "--check",
+        ]:
             assert flag in result.stdout, f"Flag '{flag}' not in help output"
 
     def test_help_first_line(self, tmp_repo):
@@ -106,8 +113,8 @@ class TestArgumentErrors:
         assert "unknown flag" in result.stderr
 
     def test_retired_flags_are_rejected(self, tmp_repo):
-        """--pi/--hermes/--codex were retired for the agents-canonical model."""
-        for flag in ("--pi", "--hermes", "--codex"):
+        """--pi/--codex were retired for the agents-canonical model."""
+        for flag in ("--pi", "--codex"):
             result = run_install_script(tmp_repo, flag)
             assert result.returncode == 2, f"{flag} should now be unknown"
             assert "unknown flag" in result.stderr
@@ -149,6 +156,77 @@ def test_git_enumeration_failure_is_fatal(tmp_repo, tmp_path):
     )
     assert result.returncode == 1
     assert "could not enumerate tracked files" in result.stderr
+
+
+def test_comparison_infrastructure_failure_is_fatal(tmp_repo, tmp_path):
+    make_skill(tmp_repo, "compare-broken")
+    hermes_home = tmp_path / "hermes-home"
+    env = {"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)}
+    installed = run_install_script(
+        tmp_repo, "--hermes", "-y", "compare-broken", env_override=env
+    )
+    assert installed.returncode == 0
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_diff = fake_bin / "diff"
+    fake_diff.write_text("#!/usr/bin/env bash\nexit 2\n")
+    fake_diff.chmod(fake_diff.stat().st_mode | stat.S_IXUSR)
+    if os.name == "nt":
+        shutil.copyfile(shutil.which("bash"), fake_bin / "diff.exe")
+        fake_bin_path = subprocess.run(
+            ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+        ).stdout.strip()
+        shell_path = subprocess.run(
+            ["bash", "-lc", 'printf %s "$PATH"'],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+        env["PATH"] = f"{fake_bin_path}:{shell_path}"
+    else:
+        env["PATH"] = f"{fake_bin}{os.pathsep}{os.environ['PATH']}"
+
+    result = run_install_script(
+        tmp_repo, "--check", "--hermes", "compare-broken", env_override=env
+    )
+    assert result.returncode != 0
+    assert "could not compare compare-broken" in result.stderr
+
+
+def test_setup_debuggers_runs_selected_skill_script(tmp_repo, tmp_path):
+    make_skill(
+        tmp_repo,
+        "using-a-debugger",
+        files={
+            "SKILL.md": "# using-a-debugger\n",
+            "scripts/setup-debuggers.py": "# test probe\n",
+        },
+    )
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text('#!/usr/bin/env bash\nprintf "debugger setup invoked\\n"\n')
+    fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
+    fake_bin_path = subprocess.run(
+        ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+    ).stdout.strip()
+    shell_path = subprocess.run(
+        ["bash", "-lc", 'printf %s "$PATH"'], capture_output=True, check=True, text=True
+    ).stdout
+    env = home_with(tmp_path)
+    env["PATH"] = f"{fake_bin_path}:{shell_path}"
+
+    result = run_install_script(
+        tmp_repo,
+        "--agents",
+        "-y",
+        "--setup-debuggers",
+        "using-a-debugger",
+        env_override=env,
+    )
+    assert result.returncode == 0
+    assert "debugger setup invoked" in result.stdout
 
 
 class TestInstallContent:
@@ -246,7 +324,10 @@ class TestExistingOnlyDefault:
 
     def test_no_existing_harness_exits_zero_with_message(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "lonely")
-        env = {"HOME": str(tmp_path)}  # no harness dirs at all
+        env = {
+            "HOME": str(tmp_path),
+            "HERMES_HOME": str(tmp_path / "hermes-home"),
+        }  # no harness dirs at all
         result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
         assert "No existing skill destinations" in result.stdout
@@ -276,6 +357,125 @@ class TestExistingOnlyDefault:
         assert (
             tmp_path / ".gemini" / "config" / "skills" / "everywhere" / "SKILL.md"
         ).exists()
+
+
+class TestHermesDestination:
+    def test_hermes_flag_installs_to_override_home(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "hermes-skill")
+        hermes_home = tmp_path / "hermes-home"
+        result = run_install_script(
+            tmp_repo,
+            "--hermes",
+            "-y",
+            "hermes-skill",
+            env_override={"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert (hermes_home / "skills" / "hermes-skill" / "SKILL.md").exists()
+
+    def test_default_mode_includes_existing_hermes_home(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "hermes-default")
+        hermes_home = tmp_path / "hermes-home"
+        hermes_home.mkdir()
+        result = run_install_script(
+            tmp_repo,
+            "-y",
+            "hermes-default",
+            env_override={"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert (hermes_home / "skills" / "hermes-default" / "SKILL.md").exists()
+
+    def test_default_mode_skips_missing_hermes_home(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "hermes-absent")
+        hermes_home = tmp_path / "hermes-home"
+        result = run_install_script(
+            tmp_repo,
+            "-y",
+            "hermes-absent",
+            env_override={"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert not hermes_home.exists()
+
+    def test_all_flag_includes_hermes(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "hermes-all")
+        hermes_home = tmp_path / "hermes-home"
+        result = run_install_script(
+            tmp_repo,
+            "--all",
+            "-y",
+            "hermes-all",
+            env_override={"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert (hermes_home / "skills" / "hermes-all" / "SKILL.md").exists()
+
+
+class TestCheckMode:
+    def test_check_returns_one_for_missing_install(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "missing-check")
+        result = run_install_script(
+            tmp_repo,
+            "--check",
+            "--hermes",
+            "missing-check",
+            env_override={
+                "HERMES_HOME": str(tmp_path / "hermes-home"),
+                "HOME": str(tmp_path),
+            },
+        )
+        assert result.returncode == 1
+        assert "install missing-check" in result.stdout
+
+    def test_check_returns_zero_after_install(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "clean-check")
+        hermes_home = tmp_path / "hermes-home"
+        env = {"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)}
+        installed = run_install_script(
+            tmp_repo, "--hermes", "-y", "clean-check", env_override=env
+        )
+        assert installed.returncode == 0
+
+        result = run_install_script(
+            tmp_repo, "--check", "--hermes", "clean-check", env_override=env
+        )
+        assert result.returncode == 0
+        assert "unchanged clean-check (hermes)" in result.stdout
+
+    def test_check_returns_one_for_changed_install(self, tmp_repo, tmp_path):
+        skill = make_skill(tmp_repo, "changed-check")
+        hermes_home = tmp_path / "hermes-home"
+        env = {"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)}
+        installed = run_install_script(
+            tmp_repo, "--hermes", "-y", "changed-check", env_override=env
+        )
+        assert installed.returncode == 0
+        (skill / "SKILL.md").write_text("# changed-check v2\n")
+
+        result = run_install_script(
+            tmp_repo, "--check", "--hermes", "changed-check", env_override=env
+        )
+        assert result.returncode == 1
+        assert "~ SKILL.md (changed)" in result.stdout
+
+    def test_check_does_not_modify_destination(self, tmp_repo, tmp_path):
+        skill = make_skill(tmp_repo, "immutable-check")
+        hermes_home = tmp_path / "hermes-home"
+        env = {"HERMES_HOME": str(hermes_home), "HOME": str(tmp_path)}
+        installed = run_install_script(
+            tmp_repo, "--hermes", "-y", "immutable-check", env_override=env
+        )
+        assert installed.returncode == 0
+        dest = hermes_home / "skills" / "immutable-check" / "SKILL.md"
+        before = dest.read_text()
+        (skill / "SKILL.md").write_text("# immutable-check v2\n")
+
+        result = run_install_script(
+            tmp_repo, "--check", "--hermes", "immutable-check", env_override=env
+        )
+        assert result.returncode == 1
+        assert dest.read_text() == before
 
 
 class TestDefaultSelection:
