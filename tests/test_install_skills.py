@@ -10,6 +10,9 @@ repo and stages the files — the installer enumerates shippable content via
 `git ls-files`, so a bare `.git` marker would stage nothing.
 """
 
+import os
+import shutil
+import stat
 import subprocess
 
 from .conftest import make_skill, run_install_script
@@ -125,6 +128,27 @@ class TestDryRun:
         result = run_install_script(tmp_repo, "--dry-run", "dry-long", env_override=env)
         assert result.returncode == 0
         assert not (tmp_path / ".claude" / "skills" / "dry-long").exists()
+
+
+def make_writable_and_retry(func, path, _exc_info):
+    """Allow the malformed-git fixture to remove Windows read-only git objects."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def test_git_enumeration_failure_is_fatal(tmp_repo, tmp_path):
+    skill = make_skill(tmp_repo, "broken")
+    shutil.rmtree(skill / ".git", onexc=make_writable_and_retry)
+    (skill / ".git").write_text("gitdir: missing-git-directory\n")
+    result = run_install_script(
+        tmp_repo,
+        "--claude",
+        "-y",
+        "broken",
+        env_override={"HOME": str(tmp_path)},
+    )
+    assert result.returncode == 1
+    assert "could not enumerate tracked files" in result.stderr
 
 
 class TestInstallContent:

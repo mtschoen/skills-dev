@@ -34,7 +34,7 @@
 - Batch produces `:set_hermes_home`, stores `HERMES_HOME_RESOLVED`, and returns process exit codes 0/1/2.
 - Both accept `--hermes` and `--check`; `--check` implies dry run and tracks drift across every selected skill/destination.
 
-- [ ] **Step 1: Add failing regression tests for Git Bash tracked-file staging**
+- [x] **Step 1: Add failing regression tests for Git Bash tracked-file staging**
 
 Keep the existing real-repository fixture and add an assertion that a failed `git ls-files` cannot produce exit 0. The existing Windows failures in `TestInstallContent` are the primary red signal. Add this focused case:
 
@@ -65,7 +65,7 @@ python -m pytest tests/test_install_skills.py::test_git_enumeration_failure_is_f
 
 Expected: the new test fails because the script returns 0; on Windows the install-content test also fails because `git -C /tmp/...` cannot resolve the path.
 
-- [ ] **Step 2: Make Bash source enumeration fail safely and work under Git Bash**
+- [x] **Step 2: Make Bash source enumeration fail safely and work under Git Bash**
 
 Add a path helper and capture `git ls-files` before iterating so failure propagates:
 

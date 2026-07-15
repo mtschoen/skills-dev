@@ -37,6 +37,14 @@ set -euo pipefail
 
 SRC_ROOT="${SKILLS_SRC_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"}"
 
+git_workdir_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 ASSUME_YES=0
 DRY_RUN=0
 DEFAULT_MODE=0
@@ -184,7 +192,14 @@ build_staging() {
     local entry
     while IFS= read -r entry; do includes+=("$entry"); done < <(manifest_includes "$src")
 
-    local f top hit
+    local f git_src tracked top hit
+    git_src="$(git_workdir_path "$src")"
+    tracked="$(mktemp "${TMPDIR:-/tmp}/skillfiles.XXXXXX")"
+    if ! git -C "$git_src" ls-files > "$tracked"; then
+        echo "could not enumerate tracked files for $(basename "$src")" >&2
+        rm -f "$tracked"
+        return 1
+    fi
     while IFS= read -r f; do
         top="${f%%/*}"
         hit=0
@@ -195,7 +210,8 @@ build_staging() {
         [ -e "$src/$f" ] || continue        # tracked but deleted in working tree
         mkdir -p "$staging/$(dirname "$f")"
         cp -p "$src/$f" "$staging/$f"
-    done < <(git -C "$src" ls-files)
+    done < "$tracked"
+    rm -f "$tracked"
 }
 
 confirm() {
@@ -262,7 +278,10 @@ install_skill_to_destination() {
     local dest="$dest_root/$name"
     local staging
     staging="$(mktemp -d "${TMPDIR:-/tmp}/skillinst.XXXXXX")"
-    build_staging "$src" "$staging"
+    if ! build_staging "$src" "$staging"; then
+        rm -rf "$staging"
+        return 1
+    fi
 
     if [ ! -e "$dest" ]; then
         echo "install $name -> $dest ($agent)"
@@ -308,7 +327,7 @@ install_skill() {
         [ "$ABORT" = 1 ] && break
         agent="${destination%%|*}"
         dest_root="${destination#*|}"
-        install_skill_to_destination "$name" "$agent" "$dest_root"
+        install_skill_to_destination "$name" "$agent" "$dest_root" || return 1
     done
 }
 
