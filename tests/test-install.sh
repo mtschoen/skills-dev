@@ -15,6 +15,13 @@ fail() { echo "  FAIL: $1" >&2; FAILED=1; }
 assert_exists()    { if [ -e "$2" ];   then pass "$1"; else fail "$1 (missing: $2)"; fi; }
 assert_absent()    { if [ ! -e "$2" ]; then pass "$1"; else fail "$1 (present: $2)"; fi; }
 assert_contains()  { if grep -q "$3" "$2" 2>/dev/null; then pass "$1"; else fail "$1"; fi; }
+assert_tree_matches() {
+    if diff -r -q "$2" "$3" >/dev/null; then
+        pass "$1"
+    else
+        fail "$1 (added, deleted, or byte-changed files below $3)"
+    fi
+}
 
 # --- build the synthetic skill fixture ------------------------------------
 build_fixture() {
@@ -37,8 +44,23 @@ build_fixture() {
     echo "$src"
 }
 
+add_debugger_fixture() {
+    local src="$1"
+    local s="$src/using-a-debugger"
+    mkdir -p "$s/scripts"
+    printf '%s\n' "---" "name: using-a-debugger" "description: debug" "---" "body" > "$s/SKILL.md"
+    cat > "$s/scripts/setup-debuggers.py" <<'PY'
+import os
+from pathlib import Path
+
+Path(os.environ["DEBUGGER_MARKER"]).write_text("ran", encoding="utf-8")
+PY
+    ( cd "$s" && git init -q && git add SKILL.md scripts/setup-debuggers.py && \
+        git -c user.email=t@t -c user.name=t commit -qm init )
+}
+
 # --- run the installer + assert the shipped surface -----------------------
-# args: <label> <dest-skills-dir>
+
 assert_install() {
     local label="$1" skills="$2"
     echo "[$label] baseline allowlist + junk exclusion"
@@ -106,18 +128,36 @@ if command -v cmd.exe >/dev/null 2>&1; then
     assert_install ".bat Hermes" "$HOME_HERMES/skills"
 
     echo "[.bat] source enumeration failure preserves installed destination"
-    managed_before_failure="$(cat "$HOME_HERMES/skills/demoskill/SKILL.md")"
+    failure_snapshot="$WORK/demoskill-before-source-failure"
+    cp -a "$HOME_HERMES/skills/demoskill" "$failure_snapshot"
     mv "$SRC2/demoskill/.git/HEAD" "$SRC2/demoskill/.git/HEAD.broken"
     USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --hermes demoskill >/dev/null 2>&1
     bat_source_failure_rc=$?
     if [ "$bat_source_failure_rc" -ne 0 ]; then pass ".bat: source enumeration failure is fatal"; else fail ".bat: source enumeration failure exit $bat_source_failure_rc"; fi
-    if [ "$(cat "$HOME_HERMES/skills/demoskill/SKILL.md")" = "$managed_before_failure" ]; then
-        pass ".bat: source enumeration failure preserves destination"
-    else
-        fail ".bat: source enumeration failure modified destination"
-    fi
+    assert_tree_matches ".bat: source enumeration failure preserves complete destination tree" \
+        "$failure_snapshot" "$HOME_HERMES/skills/demoskill"
     mv "$SRC2/demoskill/.git/HEAD.broken" "$SRC2/demoskill/.git/HEAD"
+
+    echo "[.bat] fatal staging failure skips debugger setup"
+    add_debugger_fixture "$SRC2"
+    DEBUGGER_MARKER="$WORK/debugger-setup-ran"
+    DEBUGGER_MARKER_WIN="$(cygpath -w "$DEBUGGER_MARKER")"
+    DEBUGGER_MARKER="$DEBUGGER_MARKER_WIN" \
+        USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --hermes --setup-debuggers demoskill using-a-debugger >/dev/null
+    bat_debugger_fixture_rc=$?
+    if [ "$bat_debugger_fixture_rc" -eq 0 ]; then pass ".bat: debugger fixture installs cleanly"; else fail ".bat: debugger fixture install exit $bat_debugger_fixture_rc"; fi
+    assert_exists ".bat: normal install runs debugger setup" "$DEBUGGER_MARKER"
+    rm -f "$WORK/debugger-setup-ran"
+    mv "$SRC2/demoskill/.git/HEAD" "$SRC2/demoskill/.git/HEAD.broken"
+    DEBUGGER_MARKER="$DEBUGGER_MARKER_WIN" \
+        USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --hermes --setup-debuggers demoskill using-a-debugger >/dev/null 2>&1
+    bat_fatal_debugger_rc=$?
+    mv "$SRC2/demoskill/.git/HEAD.broken" "$SRC2/demoskill/.git/HEAD"
+    if [ "$bat_fatal_debugger_rc" -ne 0 ]; then pass ".bat: fatal source failure exits nonzero with debugger setup requested"; else fail ".bat: fatal source failure exit $bat_fatal_debugger_rc"; fi
+    assert_absent ".bat: fatal source failure skips debugger setup" "$DEBUGGER_MARKER"
 
     USERPROFILE="$HOME_HERMES_WIN" HERMES_HOME="$HOME_HERMES_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" --check --hermes demoskill >/dev/null
