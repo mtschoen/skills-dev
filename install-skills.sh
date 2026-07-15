@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Install skills from this repo into one or more agent config dirs.
+# Skill source repositories are authoritative; runtime destinations are generated
+# mirrors and must not be edited directly.
 #
 # Each top-level dir here is a skill submodule with a SKILL.md at its root.
 # The installer ships only GIT-TRACKED files (via `git ls-files`), filtered to
@@ -15,7 +17,7 @@
 # Usage: ./install-skills.sh [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
 #   -y / --yes         overwrite without prompting
 #   -n / --dry-run     show what would change, don't copy
-#   --check            check for drift without prompting or writing (0 clean, 1 drift)
+#   --check            check for drift without prompting or writing (0 clean, 1 drift, 2 argument error)
 #   --agents           install to ~/.agents/skills (canonical source of truth)
 #   --claude           install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
 #   --gemini           install to ~/.gemini/config/skills (Antigravity's global skills dir)

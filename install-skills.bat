@@ -2,6 +2,8 @@
 setlocal enabledelayedexpansion
 
 rem Install skills from this repo into one or more agent config dirs.
+rem Skill source repositories are authoritative; runtime destinations are generated
+rem mirrors and must not be edited directly.
 rem
 rem Each top-level dir here is a skill submodule with a SKILL.md at its root.
 rem The installer ships only GIT-TRACKED files (git ls-files), filtered to a
@@ -13,12 +15,14 @@ rem older installs are removed -- EXCEPT content created in the DEST by
 rem running installed scripts (__pycache__, *.pyc, .pytest_cache), which is
 rem preserved and never reported as drift (see ROBO_EXCL below).
 rem
-rem Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [--setup-debuggers] [skill ...]
+rem Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
 rem   -y / --yes         overwrite without prompting
 rem   -n / --dry-run     show what would change, don't copy
+rem   --check            check for drift without prompting or writing (0 clean, 1 drift, 2 argument error)
 rem   --agents           install to %%USERPROFILE%%\.agents\skills
 rem   --claude           install to %%USERPROFILE%%\.claude\skills
 rem   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
+rem   --hermes           install to Hermes home (HERMES_HOME, LOCALAPPDATA\hermes, or USERPROFILE\.hermes)
 rem   --all              install to all known agent skill dirs
 rem   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
 rem                      install the debuggers it drives (netcoredbg/cdb/lldb,
@@ -26,9 +30,9 @@ rem                      platform-gated, idempotent); honors -n as the script's 
 rem   positional args    limit to specific skill names (default: all)
 rem
 rem With no agent flag, installs only to harness dirs that ALREADY EXIST on this
-rem machine (%USERPROFILE%\.agents, \.claude, \.gemini). A destination whose
+rem machine (%USERPROFILE%\.agents, \.claude, \.gemini, Hermes). A destination whose
 rem parent dir is absent is skipped, so harnesses you don't use get no phantom
-rem dir. Pass explicit --agents/--claude/--gemini/--all to create a missing one.
+rem dir. Pass explicit --agents/--claude/--gemini/--hermes/--all to create a missing one.
 rem
 rem Test seam: set SKILLS_SRC_ROOT to override the source dir scanned.
 
@@ -38,11 +42,14 @@ if defined SKILLS_SRC_ROOT set "SRC_ROOT=%SKILLS_SRC_ROOT%"
 
 set "ASSUME_YES=0"
 set "DRY_RUN=0"
+set "CHECK_MODE=0"
+set "DRIFT_FOUND=0"
 set "DEFAULT_MODE=0"
 set "SETUP_DEBUGGERS=0"
 set "SELECTED="
 set "DEST_COUNT=0"
 set "ABORT=0"
+set "FATAL=0"
 
 rem Destination content to preserve across installs: generated junk created in
 rem the DEST by running installed scripts (Python caches). Excluding these from
@@ -59,9 +66,11 @@ if /i "%~1"=="-y"         (set "ASSUME_YES=1" & shift & goto parse_args)
 if /i "%~1"=="--yes"      (set "ASSUME_YES=1" & shift & goto parse_args)
 if /i "%~1"=="-n"         (set "DRY_RUN=1"    & shift & goto parse_args)
 if /i "%~1"=="--dry-run"  (set "DRY_RUN=1"    & shift & goto parse_args)
+if /i "%~1"=="--check"    (set "CHECK_MODE=1" & set "DRY_RUN=1" & set "ASSUME_YES=1" & shift & goto parse_args)
 if /i "%~1"=="--agents"   (call :add_dest agents "%USERPROFILE%\.agents\skills" & shift & goto parse_args)
 if /i "%~1"=="--claude"   (call :add_dest claude "%USERPROFILE%\.claude\skills" & shift & goto parse_args)
 if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\config\skills" & shift & goto parse_args)
+if /i "%~1"=="--hermes"   (call :set_hermes_home & call :add_dest hermes "!HERMES_SKILLS!" & shift & goto parse_args)
 if /i "%~1"=="--all"      (call :add_all_dests & shift & goto parse_args)
 if /i "%~1"=="--setup-debuggers" (set "SETUP_DEBUGGERS=1" & shift & goto parse_args)
 if /i "%~1"=="-h"         goto usage
@@ -81,7 +90,7 @@ if "%DEST_COUNT%"=="0" (
     call :add_all_dests
 )
 if "!DEFAULT_MODE!"=="1" if "!DEST_COUNT!"=="0" (
-    echo No existing skill destinations on this machine. Pass --agents/--claude/--gemini or --all to bootstrap one.
+    echo No existing skill destinations on this machine. Pass --agents/--claude/--gemini/--hermes or --all to bootstrap one.
     endlocal
     exit /b 0
 )
@@ -112,7 +121,16 @@ if "!ABORT!"=="1" (
     echo aborted by user ^(q^); remaining skills skipped.
 )
 
-if "!SETUP_DEBUGGERS!"=="1" if not "!ABORT!"=="1" call :setup_debuggers
+if "!SETUP_DEBUGGERS!"=="1" if "!CHECK_MODE!"=="0" if not "!ABORT!"=="1" call :setup_debuggers
+
+if "!FATAL!"=="1" (
+    endlocal
+    exit /b 1
+)
+if "!CHECK_MODE!"=="1" if "!DRIFT_FOUND!"=="1" (
+    endlocal
+    exit /b 1
+)
 
 endlocal
 exit /b 0
@@ -163,6 +181,18 @@ exit /b 0
 call :maybe_add_one agents "%USERPROFILE%\.agents\skills"
 call :maybe_add_one claude "%USERPROFILE%\.claude\skills"
 call :maybe_add_one gemini "%USERPROFILE%\.gemini\config\skills"
+call :set_hermes_home
+call :maybe_add_one hermes "!HERMES_SKILLS!"
+exit /b 0
+
+:set_hermes_home
+if defined HERMES_HOME (
+    set "HERMES_SKILLS=%HERMES_HOME%\skills"
+) else if defined LOCALAPPDATA (
+    set "HERMES_SKILLS=%LOCALAPPDATA%\hermes\skills"
+) else (
+    set "HERMES_SKILLS=%USERPROFILE%\.hermes\skills"
+)
 exit /b 0
 
 :maybe_add_one
@@ -220,6 +250,7 @@ call :build_staging "!src!" "!staging!"
 
 if not exist "!dest!" (
     echo install !n! -^> !dest! ^(!agent!^)
+    if "!CHECK_MODE!"=="1" set "DRIFT_FOUND=1"
     if "!DRY_RUN!"=="1" ( rmdir /s /q "!staging!" & exit /b 0 )
     if not exist "!dest_root!" mkdir "!dest_root!"
     robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
@@ -235,6 +266,7 @@ if !rc! geq 8 (
     echo robocopy /L failed for !n! ^(!agent!, exit !rc!^) 1>&2
     del "!tmpout!" 2>nul
     rmdir /s /q "!staging!"
+    set "FATAL=1"
     exit /b 0
 )
 
@@ -249,6 +281,8 @@ echo.
 echo update !n! -^> !dest! ^(!agent!^)
 for /f "usebackq delims=" %%L in ("!tmpout!") do call :fmt_line "!staging!" "!dest!" "%%L"
 del "!tmpout!" 2>nul
+
+if "!CHECK_MODE!"=="1" set "DRIFT_FOUND=1"
 
 if "!DRY_RUN!"=="1" (
     echo   ^(dry-run; not applying^)
@@ -336,12 +370,14 @@ exit /b 1
 :usage
 echo Install skills from this repo into one or more agent config dirs.
 echo.
-echo Usage: install-skills.bat [-y] [-n] [--agents] [--claude] [--gemini] [--all] [--setup-debuggers] [skill ...]
+echo Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
 echo   -y / --yes         overwrite without prompting
 echo   -n / --dry-run     show what would change, don't copy
+echo   --check            check for drift without prompting or writing ^(0 clean, 1 drift, 2 argument error^)
 echo   --agents           install to %%USERPROFILE%%\.agents\skills
 echo   --claude           install to %%USERPROFILE%%\.claude\skills
 echo   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
+echo   --hermes           install to Hermes home ^(HERMES_HOME, LOCALAPPDATA\hermes, or USERPROFILE\.hermes^)
 echo   --all              install to all known agent skill dirs
 echo   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py
 echo   positional args    limit to specific skill names ^(default: all^)
