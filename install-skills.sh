@@ -12,12 +12,14 @@
 # *.pyc, .pytest_cache), which is preserved and never reported as drift
 # (see IGNORE_PATTERNS below).
 #
-# Usage: ./install-skills.sh [-y] [-n] [--agents] [--claude] [--gemini] [--all] [--setup-debuggers] [skill ...]
+# Usage: ./install-skills.sh [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
 #   -y / --yes         overwrite without prompting
 #   -n / --dry-run     show what would change, don't copy
+#   --check            check for drift without prompting or writing (0 clean, 1 drift)
 #   --agents           install to ~/.agents/skills (canonical source of truth)
 #   --claude           install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
 #   --gemini           install to ~/.gemini/config/skills (Antigravity's global skills dir)
+#   --hermes           install to Hermes home (HERMES_HOME, LOCALAPPDATA/hermes, or ~/.hermes)
 #   --all              install to all known agent skill dirs
 #   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
 #                      install the debuggers it drives (netcoredbg/gdb/lldb/cdb,
@@ -25,10 +27,11 @@
 #   positional args    limit to specific skill names (default: all)
 #
 # With no agent flag, installs only to harness dirs that ALREADY EXIST on this
-# machine, among ~/.agents/skills (canonical), ~/.claude/skills (Claude), and
-# ~/.gemini/config/skills (Antigravity). A destination whose parent harness dir (e.g.
+# machine, among ~/.agents/skills (canonical), ~/.claude/skills (Claude),
+# ~/.gemini/config/skills (Antigravity), and Hermes. A destination whose parent
+# harness dir (e.g.
 # ~/.gemini) is absent is skipped, so harnesses you don't use get no phantom
-# dir. Pass an explicit --agents/--claude/--gemini/--all to create a missing
+# dir. Pass an explicit --agents/--claude/--gemini/--hermes/--all to create a missing
 # one. Codex reads ~/.agents/skills natively, so it needs no copy.
 #
 # Test seam: set SKILLS_SRC_ROOT to override the source dir scanned for skills.
@@ -45,8 +48,26 @@ git_workdir_path() {
     fi
 }
 
+hermes_home() {
+    local home
+    if [ -n "${HERMES_HOME:-}" ]; then
+        home="$HERMES_HOME"
+    elif [ -n "${LOCALAPPDATA:-}" ] && [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+        home="$LOCALAPPDATA/hermes"
+    else
+        home="$HOME/.hermes"
+    fi
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -u "$home"
+    else
+        printf '%s\n' "$home"
+    fi
+}
+
 ASSUME_YES=0
 DRY_RUN=0
+CHECK_MODE=0
+DRIFT_FOUND=0
 DEFAULT_MODE=0
 SETUP_DEBUGGERS=0
 ABORT=0
@@ -117,6 +138,7 @@ add_all_destinations() {
     maybe_add_destination agents "${HOME}/.agents/skills"
     maybe_add_destination claude "${HOME}/.claude/skills"
     maybe_add_destination gemini "${HOME}/.gemini/config/skills"
+    maybe_add_destination hermes "$(hermes_home)/skills"
 }
 
 # Add a destination, but in default mode (no explicit agent flag) skip it when
@@ -137,13 +159,15 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -y|--yes) ASSUME_YES=1; shift ;;
         -n|--dry-run) DRY_RUN=1; shift ;;
+        --check) CHECK_MODE=1; DRY_RUN=1; ASSUME_YES=1; shift ;;
         --agents) add_destination agents "${HOME}/.agents/skills"; shift ;;
         --claude) add_destination claude "${HOME}/.claude/skills"; shift ;;
         --gemini) add_destination gemini "${HOME}/.gemini/config/skills"; shift ;;
+        --hermes) add_destination hermes "$(hermes_home)/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         --setup-debuggers) SETUP_DEBUGGERS=1; shift ;;
         -h|--help)
-            sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -156,7 +180,7 @@ if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
 fi
 
 if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
-    echo "No existing skill destinations on this machine. Pass --agents/--claude/--gemini or --all to bootstrap one."
+    echo "No existing skill destinations on this machine. Pass --agents/--claude/--gemini/--hermes or --all to bootstrap one."
     exit 0
 fi
 
@@ -285,6 +309,7 @@ install_skill_to_destination() {
 
     if [ ! -e "$dest" ]; then
         echo "install $name -> $dest ($agent)"
+        [ "$CHECK_MODE" = 1 ] && DRIFT_FOUND=1
         if [ "$DRY_RUN" != 1 ]; then
             mirror_tree "$staging" "$dest"
         fi
@@ -292,10 +317,19 @@ install_skill_to_destination() {
         return
     fi
 
-    local diff_out p
+    local diff_out diff_status p
     local -a diff_excl=()
     for p in "${IGNORE_PATTERNS[@]}"; do diff_excl+=(-x "$p"); done
-    diff_out="$(diff -rq "${diff_excl[@]}" "$staging" "$dest" 2>&1 || true)"
+    if diff_out="$(diff -rq "${diff_excl[@]}" "$staging" "$dest" 2>&1)"; then
+        diff_status=0
+    else
+        diff_status=$?
+    fi
+    if [ "$diff_status" -gt 1 ]; then
+        echo "could not compare $name at $dest" >&2
+        rm -rf "$staging"
+        return 1
+    fi
     if [ -z "$diff_out" ]; then
         echo "unchanged $name ($agent)"
         rm -rf "$staging"
@@ -305,6 +339,7 @@ install_skill_to_destination() {
     echo
     echo "update $name -> $dest ($agent)"
     printf '%s\n' "$diff_out" | format_diff "$staging" "$dest"
+    [ "$CHECK_MODE" = 1 ] && DRIFT_FOUND=1
 
     if [ "$DRY_RUN" = 1 ]; then
         echo "  (dry-run; not applying)"
@@ -350,6 +385,10 @@ fi
 if [ "$ABORT" = 1 ]; then
     echo
     echo "aborted by user (q); remaining skills skipped."
+fi
+
+if [ "$CHECK_MODE" = 1 ] && [ "$DRIFT_FOUND" = 1 ]; then
+    exit 1
 fi
 
 # Optional: install the debuggers using-a-debugger drives. Deps are machine-global
