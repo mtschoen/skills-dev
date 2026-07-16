@@ -15,6 +15,8 @@ import shutil
 import stat
 import subprocess
 
+import pytest
+
 from .conftest import make_skill, run_install_script
 
 
@@ -44,7 +46,8 @@ class TestMirrorPreservesCaches:
         (dest / "stale.txt").write_text("left by an older install\n")
 
         # Change the source so the update path (mirror_tree) actually runs.
-        (tmp_repo / "keeper" / "SKILL.md").write_text("# keeper v2\n")
+        # Use a different string length to ensure size-based update detection.
+        (tmp_repo / "keeper" / "SKILL.md").write_text("# keeper version two\n")
         subprocess.run(
             ["git", "add", "SKILL.md"],
             cwd=tmp_repo / "keeper",
@@ -54,7 +57,7 @@ class TestMirrorPreservesCaches:
 
         result = run_install_script(tmp_repo, "-y", "keeper", env_override=env)
         assert result.returncode == 0
-        assert (dest / "SKILL.md").read_text() == "# keeper v2\n"
+        assert (dest / "SKILL.md").read_text() == "# keeper version two\n"
         assert not (dest / "reports").exists()
         assert (dest / "__pycache__" / "x.pyc").exists()
         assert not (dest / "stale.txt").exists()
@@ -206,14 +209,21 @@ def test_setup_debuggers_runs_selected_skill_script(tmp_repo, tmp_path):
     fake_python = fake_bin / "python3"
     fake_python.write_text('#!/usr/bin/env bash\nprintf "debugger setup invoked\\n"\n')
     fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
-    fake_bin_path = subprocess.run(
-        ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
-    ).stdout.strip()
-    shell_path = subprocess.run(
-        ["bash", "-lc", 'printf %s "$PATH"'], capture_output=True, check=True, text=True
-    ).stdout
+    if os.name == "nt":
+        fake_bin_path = subprocess.run(
+            ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+        ).stdout.strip()
+        shell_path = subprocess.run(
+            ["bash", "-lc", 'printf %s "$PATH"'],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+        env_path = f"{fake_bin_path}:{shell_path}"
+    else:
+        env_path = f"{fake_bin}{os.pathsep}{os.environ['PATH']}"
     env = home_with(tmp_path)
-    env["PATH"] = f"{fake_bin_path}:{shell_path}"
+    env["PATH"] = env_path
 
     result = run_install_script(
         tmp_repo,
@@ -252,13 +262,20 @@ def test_check_skips_debugger_setup_on_clean_install(tmp_repo, tmp_path):
     fake_python = fake_bin / "python3"
     fake_python.write_text(f"#!/usr/bin/env bash\ntouch '{marker}'\n")
     fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
-    fake_bin_path = subprocess.run(
-        ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
-    ).stdout.strip()
-    shell_path = subprocess.run(
-        ["bash", "-lc", 'printf %s "$PATH"'], capture_output=True, check=True, text=True
-    ).stdout
-    env = {"HOME": str(tmp_path), "PATH": f"{fake_bin_path}:{shell_path}"}
+    if os.name == "nt":
+        fake_bin_path = subprocess.run(
+            ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+        ).stdout.strip()
+        shell_path = subprocess.run(
+            ["bash", "-lc", 'printf %s "$PATH"'],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+        env_path = f"{fake_bin_path}:{shell_path}"
+    else:
+        env_path = f"{fake_bin}{os.pathsep}{os.environ['PATH']}"
+    env = {"HOME": str(tmp_path), "PATH": env_path}
 
     result = run_install_script(
         tmp_repo,
@@ -463,6 +480,9 @@ class TestHermesDestination:
             home / ".hermes" / "skills" / "hermes-home-fallback" / "SKILL.md"
         ).exists()
 
+    @pytest.mark.skipif(
+        shutil.which("cygpath") is None, reason="cygpath is not available"
+    )
     def test_hermes_home_is_normalized_with_cygpath(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "hermes-normalized")
         fake_bin = tmp_path / "fake-bin"
