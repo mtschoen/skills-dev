@@ -13,9 +13,9 @@
 [submodule "reconcile-tasks"]
 	path = reconcile-tasks
 	url = ../skills-reconcile-tasks.git
-[submodule "remote-claude"]
-	path = remote-claude
-	url = ../skills-remote-claude.git
+[submodule "agent-remote"]
+	path = agent-remote
+	url = ../skills-agent-remote.git
 [submodule "smoke-test"]
 	path = smoke-test
 	url = ../skills-smoke-test.git
