@@ -1,0 +1,27 @@
+name: Validate Skills
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the reference validator
+        run: pip install skills-ref==0.1.1 pytest
+
+      - name: Fleet validation (spec + Claude Code rules + leak detection)
+        run: python scripts/validate_skills.py
+
+      - name: Validator unit tests
+        run: python -m pytest tests/test_validate_skills.py -q

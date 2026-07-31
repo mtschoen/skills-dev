@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from validate_skills import (
+    check_description_brackets,
     check_portability,
     tracked_files,
     validate_skill,
@@ -183,8 +184,12 @@ class TestValidateSkillIntegration:
             },
         )
         errors = validate_skill(tmp_path, "demo", runner=lambda _: (0, ""))
-        assert len(errors) == 1
-        assert "frontmatter breaks XML well-formedness" in errors[0]
+        # Both frontmatter checks legitimately fire on this input: the XML
+        # well-formedness wrap (on `<tag>`) and the stricter Claude Code
+        # description rule (which also catches the bare `>` XML permits).
+        assert len(errors) == 2
+        assert any("frontmatter breaks XML well-formedness" in e for e in errors)
+        assert any("angle brackets" in e for e in errors)
 
     def test_both_error_sources_combine(self, tmp_path):
         make_skill(
@@ -197,3 +202,93 @@ class TestValidateSkillIntegration:
         )
         assert any("bad frontmatter" in e for e in errors)
         assert any("user memory note" in e for e in errors)
+
+
+class TestPersonalInfrastructureHosts:
+    def test_llamabox_and_llamalab_are_flagged(self, tmp_path):
+        make_skill(
+            tmp_path,
+            "demo",
+            {
+                "SKILL.md": "Push to gitea.llamabox.internal when done.\n",
+                "docs/notes.md": "Coverage bar per llamalab/project-tracker.\n",
+            },
+        )
+        errors = check_portability(tmp_path, "demo")
+        assert len(errors) == 2
+        assert all("personal infrastructure host" in e for e in errors)
+
+    def test_ollama_is_not_a_false_positive(self, tmp_path):
+        make_skill(
+            tmp_path,
+            "demo",
+            {"SKILL.md": "Use --model ollama/qwen3.5-9b as an example.\n"},
+        )
+        assert check_portability(tmp_path, "demo") == []
+
+
+class TestDescriptionBrackets:
+    def make_skill_md(self, tmp_path, frontmatter_body):
+        skill_dir = make_skill(
+            tmp_path, "demo", {"SKILL.md": f"---\n{frontmatter_body}\n---\n\n# Body\n"}
+        )
+        return skill_dir / "SKILL.md"
+
+    def test_clean_description_passes(self, tmp_path):
+        skill_md = self.make_skill_md(
+            tmp_path, "name: demo\ndescription: A tidy description."
+        )
+        assert check_description_brackets("demo", skill_md) == []
+
+    def test_angle_brackets_in_description_are_flagged(self, tmp_path):
+        skill_md = self.make_skill_md(
+            tmp_path, "name: demo\ndescription: Emits a <beacon> block."
+        )
+        errors = check_description_brackets("demo", skill_md)
+        assert len(errors) == 1
+        assert "angle brackets" in errors[0]
+
+    def test_multiline_description_continuation_is_checked(self, tmp_path):
+        skill_md = self.make_skill_md(
+            tmp_path,
+            "name: demo\ndescription: First line is fine\n  but this >2 minute line is not",
+        )
+        assert len(check_description_brackets("demo", skill_md)) == 1
+
+    def test_brackets_in_body_are_allowed(self, tmp_path):
+        skill_dir = make_skill(
+            tmp_path,
+            "demo",
+            {
+                "SKILL.md": "---\nname: demo\ndescription: Clean.\n---\n\n"
+                "Emit a literal `<progress-beacon>` tag in the body.\n"
+            },
+        )
+        assert check_description_brackets("demo", skill_dir / "SKILL.md") == []
+
+    def test_missing_frontmatter_is_not_our_finding(self, tmp_path):
+        skill_dir = make_skill(tmp_path, "demo", {"SKILL.md": "# no frontmatter\n"})
+        assert check_description_brackets("demo", skill_dir / "SKILL.md") == []
+
+    def test_validate_skill_reports_bracket_errors(self, tmp_path):
+        make_skill(
+            tmp_path,
+            "demo",
+            {"SKILL.md": "---\nname: demo\ndescription: Bad <tag> here.\n---\n"},
+        )
+        errors = validate_skill(tmp_path, "demo", runner=lambda d: (0, "Valid skill"))
+        assert any("angle brackets" in e for e in errors)
+
+    def test_folded_block_scalar_indicator_is_not_a_bracket(self, tmp_path):
+        skill_md = self.make_skill_md(
+            tmp_path,
+            "name: demo\ndescription: >-\n  A clean folded description\n  across two lines.",
+        )
+        assert check_description_brackets("demo", skill_md) == []
+
+    def test_brackets_inside_folded_description_are_flagged(self, tmp_path):
+        skill_md = self.make_skill_md(
+            tmp_path,
+            "name: demo\ndescription: >-\n  Emits a <beacon> block periodically.",
+        )
+        assert len(check_description_brackets("demo", skill_md)) == 1
