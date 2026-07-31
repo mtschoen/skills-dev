@@ -141,6 +141,37 @@ def run_agentskills(skill_dir: Path):
     return (completed.returncode, (completed.stdout + completed.stderr).strip())
 
 
+import xml.etree.ElementTree as ET
+
+
+def check_frontmatter_xml_wellformedness(skill_dir: Path, path: str):
+    """Verify that SKILL.md frontmatter does not break XML parser when injected into prompt wrappers.
+
+    Wraps the frontmatter in a simulated system-prompt XML container (`<skill><description>...</description></skill>`)
+    and parses it using Python's builtin `xml.etree.ElementTree`. Any unescaped `<`, `>`, `&`, or invalid XML
+    syntax will fail parsing and return a clear line-specific error.
+    """
+    skill_md = find_skill_md(skill_dir)
+    if skill_md is None:
+        return []
+    text = skill_md.read_text(encoding="utf-8", errors="replace")
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return []
+    frontmatter = parts[1]
+
+    # Wrap in a standard XML document structure to test well-formedness
+    xml_doc = f"<skill>\n{frontmatter}\n</skill>"
+    try:
+        ET.fromstring(xml_doc)
+        return []
+    except ET.ParseError as err:
+        line_no = err.position[0] if hasattr(err, "position") and err.position else 1
+        return [
+            f"{path}/SKILL.md:{line_no}: frontmatter breaks XML well-formedness: {err}"
+        ]
+
+
 def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
     """Validate one skill. Returns a list of error strings ([] if clean or skipped).
 
@@ -161,6 +192,7 @@ def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
             errors.extend(f"{path}: {line}" for line in lines)
         else:
             errors.append(f"{path}: skills-ref reported invalid (exit {code})")
+    errors.extend(check_frontmatter_xml_wellformedness(skill_dir, path))
     errors.extend(check_portability(repo_root, path))
     return errors
 

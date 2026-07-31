@@ -31,9 +31,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - run: pip install skills-ref==0.1.1
+      - run: pip install skills-ref==0.1.1 pytest==8.3.4
       - name: Validate every skill with agentskills
         run: python scripts/validate_skills.py
+      - name: Run unit test suite
+        run: pytest tests/test_validate_skills.py
 
   ruff:
     # Lint + format-check umbrella-owned Python only (scripts/, tests/). Each

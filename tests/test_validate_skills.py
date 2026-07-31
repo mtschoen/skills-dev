@@ -174,6 +174,18 @@ class TestValidateSkillIntegration:
         assert len(errors) == 1
         assert "user memory note" in errors[0]
 
+    def test_frontmatter_xml_characters_flagged(self, tmp_path):
+        make_skill(
+            tmp_path,
+            "demo",
+            {
+                "SKILL.md": "---\nname: demo\ndescription: Ballpark at >2 minutes or use <tag>.\n---\n# demo\n"
+            },
+        )
+        errors = validate_skill(tmp_path, "demo", runner=lambda _: (0, ""))
+        assert len(errors) == 1
+        assert "frontmatter breaks XML well-formedness" in errors[0]
+
     def test_both_error_sources_combine(self, tmp_path):
         make_skill(
             tmp_path,
