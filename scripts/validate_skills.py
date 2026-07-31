@@ -29,6 +29,12 @@ import sys
 from pathlib import Path
 
 _PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
+_FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---", re.DOTALL)
+# The description scalar plus any indented continuation lines.
+_DESCRIPTION = re.compile(
+    r"^description\s*:\s*(?P<head>.*)(?P<rest>(?:\r?\n[ \t]+\S.*)*)",
+    re.MULTILINE,
+)
 
 # Paths that exist only on the author's machines; tracked content may not
 # reference them (internalize the content or drop the reference).
@@ -39,6 +45,7 @@ _PORTABILITY_RULES = (
         "machine-specific home path",
         re.compile(r"/home/schoen|C:[/\\]Users[/\\]mtsch|(?<![A-Za-z0-9])Y:\\"),
     ),
+    ("personal infrastructure host", re.compile(r"llamabox|llamalab")),
 )
 
 _PORTABILITY_EXEMPTIONS = {
@@ -50,6 +57,11 @@ _PORTABILITY_EXEMPTIONS = {
 _PORTABILITY_FILE_EXEMPTIONS = {
     "scripts/validate_skills.py",
     "tests/test_validate_skills.py",
+    # Umbrella-repo infrastructure docs/tooling: they legitimately describe
+    # this repo's own mirrors/registries and are never shipped with a skill.
+    "CLAUDE.md",
+    "scripts/setup_remotes.py",
+    ".npmrc",
 }
 
 # Fallback-walk skip list for directories git would not track anyway.
@@ -101,6 +113,34 @@ def check_portability(repo_root: Path, path: str):
                         "that does not travel with the repo"
                     )
     return errors
+
+
+def check_description_brackets(path: str, skill_md: Path):
+    """Flag angle brackets in the frontmatter description (Claude Code rule).
+
+    Claude Code injects name + description into the model's system-prompt
+    skill listing, where `<`/`>` behave like markup, so it rejects them in
+    the description field. The agentskills.io spec permits them, hence this
+    stricter check on top of `agentskills validate`. The SKILL.md *body* may
+    use angle brackets freely.
+    """
+    match = _FRONTMATTER.match(
+        skill_md.read_text(encoding="utf-8", errors="replace")
+    )
+    if match is None:
+        return []  # malformed frontmatter is skills-ref's finding, not ours
+    described = _DESCRIPTION.search(match.group(1))
+    if described is None:
+        return []  # missing description is skills-ref's finding, not ours
+    head = described.group("head").strip()
+    if re.fullmatch(r"[>|][+-]?(?:\s+#.*)?", head):
+        head = ""  # YAML block-scalar indicator (e.g. `>-`), not content
+    if "<" in head or ">" in head or re.search(r"[<>]", described.group("rest")):
+        return [
+            f"{path}: frontmatter description contains angle brackets, which "
+            "Claude Code rejects in the prompt-injected description field"
+        ]
+    return []
 
 
 def parse_submodule_paths(gitmodules_text):
@@ -179,7 +219,8 @@ def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
     unit-testable without the real validator installed.
     """
     skill_dir = repo_root / path
-    if find_skill_md(skill_dir) is None:
+    skill_md = find_skill_md(skill_dir)
+    if skill_md is None:
         if has_content(skill_dir):
             return []  # WIP submodule, not an authored skill yet — skip, not an error
         return [f"{path}: empty submodule dir, no SKILL.md — checkout looks broken"]
@@ -193,6 +234,7 @@ def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
         else:
             errors.append(f"{path}: skills-ref reported invalid (exit {code})")
     errors.extend(check_frontmatter_xml_wellformedness(skill_dir, path))
+    errors.extend(check_description_brackets(path, skill_md))
     errors.extend(check_portability(repo_root, path))
     return errors
 
