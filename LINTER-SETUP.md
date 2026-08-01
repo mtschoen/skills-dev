@@ -9,7 +9,7 @@ Recommended linting setup for skills-dev — fleet survey 2026-05-29.
 | Language | Where | Count (approx) |
 |---|---|---|
 | Markdown | Skill definition files (`*/SKILL.md`, `*/references/*.md`, etc.) | ~71 files |
-| Python | `tests/`, `cost-estimator/scripts/`, `pushback/evals/`, `fast-tests/evals/`, `remote-claude/references/` | ~10 canonical files; many more in `workspace/`/`evals/` scaffold (fixtures, generated runs) |
+| Python | `tests/`, `cost-estimator/scripts/`, `pushback/evals/`, `fast-tests/evals/`, `agent-remote/references/` | ~10 canonical files; many more in `workspace/`/`evals/` scaffold (fixtures, generated runs) |
 | Shell | `scripts/push-all.sh`, `scripts/pull-all.sh`, `install-skills.sh`, hook scripts in `wrap/`, `progress-beacon/` | ~10 canonical files; many copies in `escalate-over-shortcut/workspace/` (eval scaffold) |
 
 No root-level `pyproject.toml` (individual eval scaffolds have their own). No `.editorconfig` at repo root. No `.pre-commit-config.yaml`. No Gitea Actions / GitHub Actions CI. No Claude Code `PostToolUse` hook in `.claude/settings.json` (file does not exist).
@@ -17,11 +17,11 @@ No root-level `pyproject.toml` (individual eval scaffolds have their own). No `.
 ### Baseline finding count (ruff, canonical sources only)
 
 ```text
-ruff check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ remote-claude/references/
+ruff check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ agent-remote/references/
 Found 11 errors. [*] 2 fixable with --fix.
 ```
 
-Breakdown: 1 `E741` (ambiguous variable name `l` in `remote-claude.py`), 2 `F401` (unused imports in `tests/test_scripts.py`), 8 `F811` (redefined fixture imports in test file). All fixable or trivially hand-fixed; nothing alarming.
+Breakdown: 1 `E741` (ambiguous variable name `l` in `agent-remote.py`), 2 `F401` (unused imports in `tests/test_scripts.py`), 8 `F811` (redefined fixture imports in test file). All fixable or trivially hand-fixed; nothing alarming.
 
 ---
 
@@ -140,10 +140,10 @@ jobs:
         run: pip install ruff
 
       - name: ruff check
-        run: ruff check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ remote-claude/references/
+        run: ruff check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ agent-remote/references/
 
       - name: ruff format check
-        run: ruff format --check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ remote-claude/references/
+        run: ruff format --check tests/ cost-estimator/scripts/ pushback/evals/ fast-tests/evals/ agent-remote/references/
 
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
@@ -161,7 +161,7 @@ Scope the paths explicitly rather than `.` to avoid running on `workspace/` eval
 Adopt without a big-bang:
 
 1. **Mechanical autofix sweep** — `ruff check --fix <paths>` + `ruff format <paths>`, commit as one PR. The 11 current findings include 2 auto-fixable; the rest are quick hand-fixes (unused import, ambiguous variable name, fixture import pattern).
-2. **Hand-fix the real findings** — resolve the 9 non-auto-fixable ones (mostly the `F811` fixture-import pattern in `tests/test_scripts.py` and the `E741` in `remote-claude.py`).
+2. **Hand-fix the real findings** - resolve the 9 non-auto-fixable ones (mostly the `F811` fixture-import pattern in `tests/test_scripts.py` and the `E741` in `agent-remote.py`).
 3. **Bake the gate** — add the on-save hook + CI workflow; zero findings becomes the bar.
 
 **projdash reference:** projdash ran this same 3-step flow in PRs #113 (autofix sweep), #115 (real fixes), #116 (bake the gate). The decision to auto-fix + PR vs manually review first is yours.

@@ -124,9 +124,7 @@ def check_description_brackets(path: str, skill_md: Path):
     stricter check on top of `agentskills validate`. The SKILL.md *body* may
     use angle brackets freely.
     """
-    match = _FRONTMATTER.match(
-        skill_md.read_text(encoding="utf-8", errors="replace")
-    )
+    match = _FRONTMATTER.match(skill_md.read_text(encoding="utf-8", errors="replace"))
     if match is None:
         return []  # malformed frontmatter is skills-ref's finding, not ours
     described = _DESCRIPTION.search(match.group(1))

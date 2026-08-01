@@ -1,17 +1,18 @@
-skills-dev test report - 2026-07-15
+skills-dev test report - 2026-07-31
 ═══════════════════════════════════════════
 
 Status:   PASS (lint gate + tests)
-Mode:     maintain (stale installer mirror-contract test correction)
-Git:      pre-change parent cdee16c
+Mode:     maintain (skill refresh and legacy remote rename cleanup)
+Git:      pre-change parent 8d741e2
 
-Lint:     ruff 0.15.15:   0 findings   (ruff check scripts/ tests/)
+Lint:     ruff 0.15.16:   0 findings   (ruff check scripts/ tests/)
           ruff format:    0 to reformat (ruff format --check scripts/ tests/)
           shellcheck 0.11: 0 findings   (scripts/*.sh install-skills.sh tests/test-install.sh;
                           verified locally on LF-normalized content — the Windows
                           working tree is CRLF via autocrlf, which trips SC1017
                           noise; CI's LF checkout is the authoritative run)
-          aislop 0.12.3:  100/100 score, 0 issues, 5 files (aislop ci .)
+          aislop 0.14.0:  100/100 score, 0 issues, 5 supported files
+                          (75 files scanned; aislop ci .)
                           ci.failBelow 100; format+lint engines off (ruff owns
                           those); telemetry off.
           0 per-case suppressions
@@ -30,7 +31,8 @@ Scope:    Umbrella-owned code only. Each skill is its own git submodule/repo
           umbrella session (fleet-wide on-save coverage); CI + the validate
           command stay scoped to scripts/ + tests/.
 
-Tests:    61 collected, 61 pass, 0 failures (python -m pytest tests/)
+Tests:    88 collected, 87 pass, 1 skipped, 0 failures
+          (python3 -m pytest tests/)
           The 4 pre-existing failures recorded in the 2026-05-29 report
           (install-skills.sh gemini-harness assertions) were fixed 2026-06-10:
           the tests asserted the old .gemini/skills path and pre-created the
@@ -45,4 +47,4 @@ Gate commands (tier 2 — the authoritative local check):
   ruff check scripts/ tests/
   ruff format --check scripts/ tests/
   shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
-  npx -y @schoen/aislop@0.12.3 ci
+  aislop ci .

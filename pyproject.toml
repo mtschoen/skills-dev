@@ -30,7 +30,7 @@ exclude = [
     "promote-project/**",
     "pushback/**",
     "reconcile-tasks/**",
-    "remote-claude/**",
+    "agent-remote/**",
     "research-first/**",
     "review-in-parallel-pipelines/**",
     "running-spikes/**",
