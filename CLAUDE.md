@@ -88,3 +88,17 @@ support:
 
 To refresh the pinned binary after new commits land on the fork branch:
 `pnpm add -g --allow-build=aislop "github:mtschoen/aislop#schoen/main"`
+
+## Dependency policy
+
+Skills reference each other and external tools at three levels:
+
+- **Hard dependency** - the skill is meaningless without it (e.g. fleet-orchestration requires superpowers:dispatching-parallel-agents; memory-cleanup requires the replica CLI). Declare it explicitly: name it in the frontmatter description ("Requires ...") and give an install pointer or link in a Requirements section. No fallback text needed.
+- **Soft dependency** - the skill works alone but is enhanced by another skill or MCP server. Reference it conditionally ("if X is installed ...") and state the standalone fallback where one is cheap to describe. Do not contort the text just for isolation's sake.
+- **Suite** - a declared group designed to be installed together. Members may reference each other plainly; each member's README notes the suite membership once. Current suites: the completion suite = maintaining-full-coverage, smoke-test, docs-update, escalate-over-shortcut, wrap.
+
+External tools get a link on first mention in each skill: project-tracker (part of https://github.com/mtschoen/schoen-lab), git-wizard (https://github.com/mtschoen/git-wizard), aislop (https://github.com/scanaislop/aislop/), replica (part of https://github.com/mtschoen/schoen-lab), agent-walker (https://github.com/mtschoen/agent-walker), pi (https://pi.dev/).
+
+## Superpowers fork
+
+These skills are designed against the superpowers fork at https://github.com/mtschoen/superpowers, which changes upstream's rules around parallel subagent dispatch and plan/spec file handling. Notably, official superpowers 6.2.0 forbids dispatching implementation subagents in parallel; the fork's subagent-driven-development adds Parallel Dispatch (Worktree Isolation). Skills that describe parallel SDD (review-in-parallel-pipelines, fleet-orchestration) assume the fork.
