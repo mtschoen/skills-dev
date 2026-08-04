@@ -97,7 +97,7 @@ Skills reference each other and external tools at three levels:
 - **Soft dependency** - the skill works alone but is enhanced by another skill or MCP server. Reference it conditionally ("if X is installed ...") and state the standalone fallback where one is cheap to describe. Do not contort the text just for isolation's sake.
 - **Suite** - a declared group designed to be installed together. Members may reference each other plainly; each member's README notes the suite membership once. Current suites: the completion suite = maintaining-full-coverage, smoke-test, docs-update, escalate-over-shortcut, wrap.
 
-External tools get a link on first mention in each skill: project-tracker, git-wizard (https://github.com/mtschoen/git-wizard), aislop (https://github.com/scanaislop/aislop/), replica (part of https://github.com/mtschoen/schoen-lab), agent-walker (https://github.com/mtschoen/agent-walker), pi (https://pi.dev/).
+External tools get a link on first mention in each skill: project-tracker (part of https://github.com/mtschoen/schoen-lab), git-wizard (https://github.com/mtschoen/git-wizard), aislop (https://github.com/scanaislop/aislop/), replica (part of https://github.com/mtschoen/schoen-lab), agent-walker (https://github.com/mtschoen/agent-walker), pi (https://pi.dev/).
 
 ## Superpowers fork
 
