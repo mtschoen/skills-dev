@@ -164,7 +164,7 @@ Adopt without a big-bang:
 2. **Hand-fix the real findings** - resolve the 9 non-auto-fixable ones (mostly the `F811` fixture-import pattern in `tests/test_scripts.py` and the `E741` in `agent-remote.py`).
 3. **Bake the gate** — add the on-save hook + CI workflow; zero findings becomes the bar.
 
-**projdash reference:** projdash ran this same 3-step flow in PRs #113 (autofix sweep), #115 (real fixes), #116 (bake the gate). The decision to auto-fix + PR vs manually review first is yours.
+**project-tracker reference:** project-tracker ran this same 3-step flow in PRs #113 (autofix sweep), #115 (real fixes), #116 (bake the gate). The decision to auto-fix + PR vs manually review first is yours.
 
 The `workspace/` and `evals/workspace/` trees should be excluded permanently (see ruff config above) — they contain hundreds of agent-generated Python and shell files that aren't maintained to any linting standard and would flood the findings list.
 
