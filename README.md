@@ -54,6 +54,8 @@ Supported destination flags:
 
 Each skill repo has `SKILL.md` at its root. The installer ships only **git-tracked** files, filtered to a top-level allowlist: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root. Dev-only content (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.) is excluded by omission, and generated junk can never leak because untracked files are never shipped.
 
+The installer copies skill **files** only - it does not install any external runtime tooling a skill needs. Some skills have such prerequisites (e.g. `using-a-debugger` needs a debugger binary like netcoredbg/gdb/lldb/cdb plus Python 3; `cost-estimator` needs its data sources). Each such skill documents its prerequisites in its own `references/` (for `using-a-debugger`, see `references/tooling-setup.md`) and README - check there after installing.
+
 ## Working across all submodules
 
 `scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo. push-all pushes to both `origin` (Gitea) and `github` (GitHub) by default; pull-all fetches + fast-forwards from `origin` only. Either accepts `--remote <name>` to add another remote where it exists. Each push is pre-flighted (fetch + classify local vs remote as up-to-date / fast-forward / behind / diverged), and non-fast-forward states are reported and skipped. Errors print inline and don't halt the run, but the script exits non-zero with a summary.
