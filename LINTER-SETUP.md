@@ -89,7 +89,7 @@ select = ["F", "I", "B", "UP", "SIM", "RET", "PIE", "C4", "W", "RUF", "E741"]
 
 ## On-save hook (Python)
 
-Paste into `.claude/settings.json` under `hooks.PostToolUse`:
+Paste into the agent's settings under `hooks.PostToolUse`:
 
 ```json
 {

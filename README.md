@@ -1,6 +1,6 @@
 # skills-dev
 
-A workspace for developing [Claude Code](https://claude.com/claude-code) skills. Each top-level directory is a git submodule pointing at that skill's own repository; this repo is the umbrella that ties them together and provides install + sync tooling.
+A workspace for developing agent skills - reusable capabilities for AI coding assistants including Codex, opencode, [Claude Code](https://claude.com/claude-code), Antigravity, and Hermes. Each top-level directory is a git submodule pointing at that skill's own repository; this repo is the umbrella that ties them together and provides install + sync tooling.
 
 ## Cloning
 
