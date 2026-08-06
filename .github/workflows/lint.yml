@@ -91,6 +91,16 @@ jobs:
         # Pinned to a commit SHA of the fork's schoen/main so the gate cannot
         # drift under us; bump the SHA deliberately after new fork commits
         # (git ls-remote https://github.com/mtschoen/aislop.git schoen/main).
-        run: npm install -g "github:mtschoen/aislop#4d87a844407cf348ec3265e8f5dfe97c614041d2"
+        # Built from an explicit clone: npm's git-dep prepare flow cannot run
+        # the fork's tsdown build (devDep missing in the temp clone), but a
+        # normal install in a real checkout can, and the packed tarball then
+        # installs globally without rebuilding.
+        run: |
+          git clone https://github.com/mtschoen/aislop.git "$RUNNER_TEMP/aislop"
+          git -C "$RUNNER_TEMP/aislop" checkout 4d87a844407cf348ec3265e8f5dfe97c614041d2
+          cd "$RUNNER_TEMP/aislop"
+          npm install
+          npm pack
+          npm install -g ./aislop-*.tgz
       - name: aislop ci (score 100 gate)
         run: aislop ci
