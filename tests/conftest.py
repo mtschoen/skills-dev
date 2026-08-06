@@ -50,7 +50,7 @@ def make_skill(repo_root, name, files=None):
     The installer enumerates shippable files via `git ls-files`, so each mock
     skill must be a real git repo with its files tracked (a bare `.git` marker
     is not enough). `files` maps relative paths to text contents and defaults to
-    a lone SKILL.md. Files are staged (not committed) — `git ls-files` reads the
+    a lone SKILL.md. Files are staged (not committed) - `git ls-files` reads the
     index, which is all build_staging needs.
 
     Returns the skill directory path.

@@ -6,7 +6,7 @@ behavior (default mode installs only to harness dirs that already exist;
 explicit flags force-create).
 
 Mock skills are created with conftest.make_skill, which initializes a real git
-repo and stages the files — the installer enumerates shippable content via
+repo and stages the files - the installer enumerates shippable content via
 `git ls-files`, so a bare `.git` marker would stage nothing.
 """
 

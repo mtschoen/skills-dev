@@ -34,6 +34,8 @@ jobs:
       - run: pip install skills-ref==0.1.1 pytest==8.3.4
       - name: Validate every skill with agentskills
         run: python scripts/validate_skills.py
+      - name: Check per-submodule markdownlint/CI config drift
+        run: python scripts/check_config_drift.py
       - name: Run unit test suite
         run: pytest tests/test_validate_skills.py
 

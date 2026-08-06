@@ -102,7 +102,7 @@ def lint(file_path):
             if out and code != 0:
                 findings.append(("markdownlint", out))
         # A SKILL.md additionally gets Agent Skills spec validation (frontmatter,
-        # naming, field rules) — markdownlint does not cover that.
+        # naming, field rules) - markdownlint does not cover that.
         if os.path.basename(file_path) == "SKILL.md":
             agentskills = shutil.which("agentskills")
             if agentskills:

@@ -154,7 +154,7 @@ def has_content(skill_dir: Path):
 def run_agentskills(skill_dir: Path):
     """Validate one skill dir with `agentskills validate`. Returns (exit_code, output).
 
-    Raises RuntimeError if the `agentskills` console script isn't on PATH — a
+    Raises RuntimeError if the `agentskills` console script isn't on PATH - a
     missing validator must fail loudly, never silently pass.
     """
     executable = shutil.which("agentskills")
@@ -212,8 +212,8 @@ def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
     skill_md = find_skill_md(skill_dir)
     if skill_md is None:
         if has_content(skill_dir):
-            return []  # WIP submodule, not an authored skill yet — skip, not an error
-        return [f"{path}: empty submodule dir, no SKILL.md — checkout looks broken"]
+            return []  # WIP submodule, not an authored skill yet - skip, not an error
+        return [f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"]
 
     errors = []
     code, output = runner(skill_dir)
@@ -264,7 +264,7 @@ def evaluate(repo_root: Path, runner=run_agentskills):
             1,
             [
                 f"skill validation failed ({len(errors)} issue(s)):",
-                *(f"  - {error}" for error in errors),
+                *(f" - {error}" for error in errors),
                 *notices,
             ],
         )
@@ -272,7 +272,7 @@ def evaluate(repo_root: Path, runner=run_agentskills):
         return (
             2,
             [
-                "no skills with a SKILL.md were validated — refusing to pass "
+                "no skills with a SKILL.md were validated - refusing to pass "
                 "vacuously (is the checkout broken?)",
                 *notices,
             ],

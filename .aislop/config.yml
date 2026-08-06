@@ -1,4 +1,4 @@
-# aislop configuration — https://github.com/scanaislop/aislop
+# aislop configuration - https://github.com/scanaislop/aislop
 # Project-scoped quality gate for the skills-dev umbrella. Scope is
 # umbrella-owned code only; each skill is its own submodule/repo and owns its
 # own gate, so every submodule dir is excluded below (consistent with the ruff

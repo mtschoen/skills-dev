@@ -75,7 +75,7 @@ def main():
     if not file_path:
         return
     if os.path.splitext(file_path)[1].lower() not in CODE_EXTENSIONS:
-        return  # docs/markdown/shell edit — skip the whole-repo aislop scan
+        return  # docs/markdown/shell edit - skip the whole-repo aislop scan
 
     npx = shutil.which("npx")
     if not npx:

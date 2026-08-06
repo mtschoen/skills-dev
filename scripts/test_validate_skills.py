@@ -50,7 +50,7 @@ def _pass_runner(skill_dir):
 
 
 def _fail_runner(skill_dir):
-    return (1, f"Validation failed for {skill_dir}:\n  - some rule violated")
+    return (1, f"Validation failed for {skill_dir}:\n - some rule violated")
 
 
 # --- parse_submodule_paths ---
@@ -133,7 +133,7 @@ def test_evaluate_no_submodules_refuses_vacuous_pass():
     (repo / ".gitmodules").write_text("", encoding="utf-8")
     code, lines = validator.evaluate(repo, runner=_pass_runner)
     assert code == 2, (
-        "an empty submodule set must not pass — that hides a broken checkout"
+        "an empty submodule set must not pass - that hides a broken checkout"
     )
     assert any("vacuous" in line.lower() for line in lines)
 
