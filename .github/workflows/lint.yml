@@ -41,7 +41,7 @@ jobs:
     # Lint + format-check umbrella-owned Python only (scripts/, tests/). Each
     # skill submodule owns its own gate, so submodules are not checked out and
     # the paths are scoped explicitly (config: pyproject.toml). Zero findings
-    # is the bar — see TEST-REPORT.md.
+    # is the bar - see TEST-REPORT.md.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -67,15 +67,16 @@ jobs:
 
   aislop:
     # AI-slop / code-quality / security gate over umbrella-owned code, plus a
-    # redundant format check. Pinned to a known release (pre-1.0; unpinned npx
-    # could change rules and break the gate). Scope + threshold (score 100) come
-    # from .aislop/config.yml. aislop's format engine is enabled there as a
-    # belt-and-suspenders pass: @schoen/aislop >= 0.12.2 prefers the PATH ruff
-    # over its vendored copy, so we install the SAME pinned ruff the dedicated
-    # ruff job uses and aislop formats identically. `aislop ci` exits non-zero
-    # below threshold.
+    # redundant format check. Scope + threshold (score 100) come from
+    # .aislop/config.yml. The gate runs the fork build (mtschoen/aislop,
+    # branch schoen/main: C#/roslynator + newer rules), installed straight
+    # from GitHub; npm builds it on install. aislop's format engine is
+    # enabled as a belt-and-suspenders pass: the fork prefers the PATH ruff
+    # over its vendored copy, so we install the SAME pinned ruff the
+    # dedicated ruff job uses and aislop formats identically. `aislop ci`
+    # exits non-zero below threshold.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -86,8 +87,7 @@ jobs:
           python-version: '3.x'
       - name: Install pinned ruff (so aislop's format pass matches CI's ruff job)
         run: pip install ruff==0.15.15
+      - name: Install the aislop fork build
+        run: npm install -g "github:mtschoen/aislop#schoen/main"
       - name: aislop ci (score 100 gate)
-        # Fork build @schoen/aislop (C#/roslynator + newer rules) from the Gitea
-        # npm registry (see .npmrc); Gitea serves a Let's Encrypt cert so Node
-        # verifies it natively (no NODE_EXTRA_CA_CERTS needed).
-        run: npx -y @schoen/aislop@0.12.3 ci
+        run: aislop ci

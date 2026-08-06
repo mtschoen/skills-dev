@@ -48,20 +48,12 @@ _PORTABILITY_RULES = (
     ("personal infrastructure host", re.compile(r"llamabox|llamalab")),
 )
 
-_PORTABILITY_EXEMPTIONS = {
-    # running-spikes stores the spike notes it writes under ~/.claude/notes.
-    "running-spikes": {"user memory note (~/.claude/notes/)"},
-}
+_PORTABILITY_EXEMPTIONS = {}
 
 # These define and test the deny patterns, so they contain them literally.
 _PORTABILITY_FILE_EXEMPTIONS = {
     "scripts/validate_skills.py",
     "tests/test_validate_skills.py",
-    # Umbrella-repo infrastructure docs/tooling: they legitimately describe
-    # this repo's own mirrors/registries and are never shipped with a skill.
-    "CLAUDE.md",
-    "scripts/setup_remotes.py",
-    ".npmrc",
 }
 
 # Fallback-walk skip list for directories git would not track anyway.

@@ -2,6 +2,10 @@
 
 A workspace for developing agent skills - reusable capabilities for AI coding assistants including Codex, opencode, [Claude Code](https://claude.com/claude-code), Antigravity, and Hermes. Each top-level directory is a git submodule pointing at that skill's own repository; this repo is the umbrella that ties them together and provides install + sync tooling.
 
+## What's here
+
+The skills fall into a few broad families. **Completion discipline** - gates an agent runs before calling work done; `maintaining-full-coverage` (hold the coverage/lint bar, never lower it silently) and `wrap` (the session-closing ritual: externalize memory, leave every repo clean) are the headliners. **Working method** - habits applied while working: research before building, small runnable spikes over doc-divination, evidence-based pushback on risky asks. **Orchestration** - multi-agent and multi-machine patterns: reviewing parallel pipelines at merge points, delegating to remote hosts, cooperative project locks. **Project lifecycle** - capturing ideas, promoting them into real repos, finding and reconciling tasks; several of these integrate with the [project-tracker](https://github.com/mtschoen/schoen-lab) dashboard when it's installed and degrade gracefully when it isn't. The set ebbs and flows - each directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
+
 ## Cloning
 
 The skills live in submodules, so a plain `git clone` will leave you with empty directories. Use one of:
@@ -58,13 +62,11 @@ The installer copies skill **files** only - it does not install any external run
 
 ## Working across all submodules
 
-`scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo. push-all pushes to both `origin` (Gitea) and `github` (GitHub) by default; pull-all fetches + fast-forwards from `origin` only. Either accepts `--remote <name>` to add another remote where it exists. Each push is pre-flighted (fetch + classify local vs remote as up-to-date / fast-forward / behind / diverged), and non-fast-forward states are reported and skipped. Errors print inline and don't halt the run, but the script exits non-zero with a summary.
+`scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo. push-all pushes `origin` by default; pull-all fetches + fast-forwards from `origin` only. Either accepts `--remote <name>` to add another remote where it exists. Each push is pre-flighted (fetch + classify local vs remote as up-to-date / fast-forward / behind / diverged), and non-fast-forward states are reported and skipped. Errors print inline and don't halt the run, but the script exits non-zero with a summary.
 
 ```bash
 ./scripts/pull-all.sh
 ./scripts/push-all.sh
-./scripts/pull-all.sh --remote github
-./scripts/push-all.sh --remote github
 ```
 
 ## Layout
@@ -82,7 +84,7 @@ skills-dev/
     └── pull-all.sh
 ```
 
-Submodule URLs in `.gitmodules` are relative (`../skills-<name>.git`), so the same `.gitmodules` works whether you cloned from Gitea or GitHub.
+Submodule URLs in `.gitmodules` are relative (`../skills-<name>.git`), resolving against whichever remote the umbrella was cloned from.
 
 ## License
 

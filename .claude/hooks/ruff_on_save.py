@@ -13,7 +13,7 @@ Per file type:
   *.md      -> markdownlint-cli2 (respects the nearest .markdownlint-cli2.jsonc)
   SKILL.md  -> additionally `agentskills validate <skill-dir>` (skills-ref spec)
 
-Written in Python rather than the LINTER-SETUP.md inline-bash form so it runs
+Written in Python rather than an inline-bash hook so it runs
 identically regardless of which shell Claude Code uses on Windows vs. Unix, and
 without a jq dependency. Node CLIs (markdownlint-cli2) installed as Windows
 `.cmd` shims are launched via `cmd /c` because CreateProcess cannot start a
