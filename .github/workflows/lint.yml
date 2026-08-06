@@ -88,6 +88,9 @@ jobs:
       - name: Install pinned ruff (so aislop's format pass matches CI's ruff job)
         run: pip install ruff==0.15.15
       - name: Install the aislop fork build
-        run: npm install -g "github:mtschoen/aislop#schoen/main"
+        # Pinned to a commit SHA of the fork's schoen/main so the gate cannot
+        # drift under us; bump the SHA deliberately after new fork commits
+        # (git ls-remote https://github.com/mtschoen/aislop.git schoen/main).
+        run: npm install -g "github:mtschoen/aislop#4d87a844407cf348ec3265e8f5dfe97c614041d2"
       - name: aislop ci (score 100 gate)
         run: aislop ci
