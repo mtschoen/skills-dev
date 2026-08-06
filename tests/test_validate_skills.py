@@ -133,13 +133,16 @@ class TestCheckPortability:
         )
         assert len(check_portability(tmp_path, "demo")) == 2
 
-    def test_running_spikes_notes_exemption(self, tmp_path):
+    def test_running_spikes_notes_no_longer_exempt(self, tmp_path):
+        # running-spikes moved its memory layer to ~/.agents/memories
+        # (2026-08-05), so its historical ~/.claude/notes exemption is gone
+        # and the reference is flagged like anywhere else.
         make_skill(
             tmp_path,
             "running-spikes",
             {"SKILL.md": "Save the note at ~/.claude/notes/spike_<slug>.md.\n"},
         )
-        assert check_portability(tmp_path, "running-spikes") == []
+        assert check_portability(tmp_path, "running-spikes") != []
 
     def test_exemption_is_per_rule_not_blanket(self, tmp_path):
         make_skill(
