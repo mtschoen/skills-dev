@@ -64,6 +64,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: shellcheck
         run: shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
+      # The suite was shellchecked but never executed, so installer regressions
+      # could only be caught by hand. The .bat half self-skips without cmd.exe.
+      - name: install integration test
+        run: bash tests/test-install.sh
 
   aislop:
     # AI-slop / code-quality / security gate over umbrella-owned code, plus a

@@ -50,6 +50,7 @@ set "SELECTED="
 set "DEST_COUNT=0"
 set "ABORT=0"
 set "FATAL=0"
+set "APPLY_FAILED=0"
 
 rem Destination content to preserve across installs: generated junk created in
 rem the DEST by running installed scripts (Python caches). Excluding these from
@@ -121,9 +122,15 @@ if "!ABORT!"=="1" (
     echo aborted by user ^(q^); remaining skills skipped.
 )
 
-if "!SETUP_DEBUGGERS!"=="1" if "!CHECK_MODE!"=="0" if not "!ABORT!"=="1" if not "!FATAL!"=="1" call :setup_debuggers
+if "!SETUP_DEBUGGERS!"=="1" if "!CHECK_MODE!"=="0" if not "!ABORT!"=="1" if not "!FATAL!"=="1" if not "!APPLY_FAILED!"=="1" call :setup_debuggers
 
 if "!FATAL!"=="1" (
+    endlocal
+    exit /b 1
+)
+if "!APPLY_FAILED!"=="1" (
+    echo.
+    echo one or more skills failed to install; see the errors above. 1>&2
     endlocal
     exit /b 1
 )
@@ -260,7 +267,13 @@ if not exist "!dest!" (
     if "!DRY_RUN!"=="1" ( rmdir /s /q "!staging!" & exit /b 0 )
     if not exist "!dest_root!" mkdir "!dest_root!"
     robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
+    set "rc=!errorlevel!"
     rmdir /s /q "!staging!"
+    if !rc! geq 8 (
+        echo   FAILED to install !n! at !dest! ^(robocopy exit !rc!^) 1>&2
+        set "APPLY_FAILED=1"
+        exit /b 1
+    )
     exit /b 0
 )
 
@@ -304,8 +317,14 @@ if errorlevel 1 (
 )
 if not exist "!dest_root!" mkdir "!dest_root!"
 robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
-echo   updated.
+set "rc=!errorlevel!"
 rmdir /s /q "!staging!"
+if !rc! geq 8 (
+    echo   FAILED to update !n! at !dest! - it may be partially written ^(robocopy exit !rc!^) 1>&2
+    set "APPLY_FAILED=1"
+    exit /b 1
+)
+echo   updated.
 exit /b 0
 
 :fmt_line

@@ -100,6 +100,31 @@ printf '%s\n' "EDITED-MARKER" >> "$SRC/demoskill/SKILL.md"   # not committed
 HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_contains ".sh: uncommitted edit propagated" "$HOME_SH/.claude/skills/demoskill/SKILL.md" "EDITED-MARKER"
 
+echo "[.sh] a failed apply is reported and exits nonzero"
+# Injected by making the destination unwritable. Root ignores the mode bits and
+# some filesystems do not enforce them, so prove the injection took before
+# asserting on it -- otherwise this silently tests nothing.
+ro_dest="$HOME_SH/.claude/skills/demoskill"
+printf '%s\n' "FAILURE-PATH-MARKER" >> "$SRC/demoskill/SKILL.md"
+chmod -R a-w "$ro_dest" 2>/dev/null
+if : > "$ro_dest/.writeprobe" 2>/dev/null; then
+    rm -f "$ro_dest/.writeprobe"
+    echo "  SKIP: unwritable destination is not enforced here"
+else
+    fail_out="$(HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill 2>&1)"
+    fail_rc=$?
+    if [ "$fail_rc" -ne 0 ]; then pass ".sh: failed apply exits nonzero"; else fail ".sh: failed apply exit $fail_rc"; fi
+    case "$fail_out" in
+        *"updated."*) fail ".sh: failed apply still claimed 'updated.'" ;;
+        *)            pass ".sh: failed apply does not claim 'updated.'" ;;
+    esac
+    case "$fail_out" in
+        *FAILED*) pass ".sh: failed apply names the destination it could not write" ;;
+        *)        fail ".sh: failed apply printed no FAILED line" ;;
+    esac
+fi
+chmod -R u+w "$ro_dest" 2>/dev/null
+
 # ===== .bat under test (Windows only) =====
 if command -v cmd.exe >/dev/null 2>&1; then
     # MSYS_NO_PATHCONV=1: stop Git Bash from rewriting cmd.exe's "/c" switch

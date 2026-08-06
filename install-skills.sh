@@ -73,6 +73,7 @@ DRIFT_FOUND=0
 DEFAULT_MODE=0
 SETUP_DEBUGGERS=0
 ABORT=0
+APPLY_FAILED=0
 SELECTED=()
 DESTINATIONS=()
 
@@ -89,42 +90,62 @@ BASELINE_INCLUDES=(SKILL.md scripts references assets)
 # longer needs preserving here.
 IGNORE_PATTERNS=(__pycache__ '*.pyc' '*.pyo' .pytest_cache)
 
+# True when any component of destination-relative path $1 matches IGNORE_PATTERNS,
+# so preserved caches are never pruned.
+path_is_preserved() {
+    local rel="$1" comp p
+    while :; do
+        comp="${rel##*/}"
+        for p in "${IGNORE_PATTERNS[@]}"; do
+            # shellcheck disable=SC2254  # $p is a glob pattern by design
+            case "$comp" in
+                $p) return 0 ;;
+            esac
+        done
+        case "$rel" in
+            */*) rel="${rel%/*}" ;;
+            *) return 1 ;;
+        esac
+    done
+}
+
+# Delete entries under $2 that $1 no longer ships, plus any whose type changed
+# (file <-> directory) so the copy that follows cannot fail on them.
+prune_removed() {
+    local from="$1" to="$2" f rel
+    while IFS= read -r -d '' f; do
+        [ -e "$f" ] || continue          # a parent was pruned already
+        rel="${f#"$to"/}"
+        path_is_preserved "$rel" && continue
+        if [ -e "$from/$rel" ]; then
+            [ -d "$f" ] && [ -d "$from/$rel" ] && continue
+            [ ! -d "$f" ] && [ ! -d "$from/$rel" ] && continue
+        fi
+        rm -rf "$f" || return 1
+    done < <(find "$to" -mindepth 1 -print0)
+    return 0
+}
+
 # Mirror $1 -> $2, deleting destination files absent from source but preserving
-# IGNORE_PATTERNS. Prefers rsync (surgical). Without rsync, the old destination
-# is moved aside, the fresh copy laid down, and IGNORE_PATTERNS entries restored
-# from the old tree -- dest-only caches must survive either path.
+# IGNORE_PATTERNS. Prefers rsync (surgical). The fallback syncs in place and must
+# never rename $2: on Windows a running agent holds an open handle on installed
+# skill directories, which fails the rename while leaving the contents writable.
+# Returns non-zero on failure; callers MUST check, because errexit does not reach
+# here -- install_skill invokes its caller as part of an || list, which disables
+# it for the whole dynamic extent.
 mirror_tree() {
     local from="$1" to="$2" p
     if command -v rsync >/dev/null 2>&1; then
         local -a rexcl=()
         for p in "${IGNORE_PATTERNS[@]}"; do rexcl+=(--exclude="$p"); done
-        mkdir -p "$to"
-        rsync -a --delete "${rexcl[@]}" "$from/" "$to/"
-        return
+        mkdir -p "$to" || return 1
+        rsync -a --delete "${rexcl[@]}" "$from/" "$to/" || return 1
+        return 0
     fi
-    local backup=""
-    if [ -d "$to" ]; then
-        backup="${to}.preserve.$$"
-        rm -rf "$backup"
-        mv "$to" "$backup"
-    else
-        rm -rf "$to"
-    fi
-    mkdir -p "$to"
-    cp -a "$from/." "$to/"
-    if [ -n "$backup" ]; then
-        local f rel
-        for p in "${IGNORE_PATTERNS[@]}"; do
-            while IFS= read -r -d '' f; do
-                rel="${f#"$backup"/}"
-                if [ ! -e "$to/$rel" ]; then
-                    mkdir -p "$(dirname "$to/$rel")"
-                    cp -a "$f" "$to/$rel"
-                fi
-            done < <(find "$backup" -name "$p" -print0 2>/dev/null)
-        done
-        rm -rf "$backup"
-    fi
+    mkdir -p "$to" || return 1
+    prune_removed "$from" "$to" || return 1
+    cp -a "$from/." "$to/" || return 1
+    return 0
 }
 
 add_destination() {
@@ -312,8 +333,10 @@ install_skill_to_destination() {
     if [ ! -e "$dest" ]; then
         echo "install $name -> $dest ($agent)"
         [ "$CHECK_MODE" = 1 ] && DRIFT_FOUND=1
-        if [ "$DRY_RUN" != 1 ]; then
-            mirror_tree "$staging" "$dest"
+        if [ "$DRY_RUN" != 1 ] && ! mirror_tree "$staging" "$dest"; then
+            echo "  FAILED to install $name at $dest" >&2
+            rm -rf "$staging"
+            return 1
         fi
         rm -rf "$staging"
         return
@@ -350,8 +373,13 @@ install_skill_to_destination() {
     fi
 
     if confirm "overwrite $dest?"; then
-        mirror_tree "$staging" "$dest"
-        echo "  updated."
+        if mirror_tree "$staging" "$dest"; then
+            echo "  updated."
+        else
+            echo "  FAILED to update $name at $dest - it may be partially written." >&2
+            rm -rf "$staging"
+            return 1
+        fi
     else
         echo "  skipped."
     fi
@@ -375,7 +403,7 @@ for src in "$SRC_ROOT"/*/; do
     [ -e "$src/.git" ] || continue       # only git submodules / repos
     found=$((found + 1))
     is_selected "$name" || continue
-    install_skill "$name"
+    install_skill "$name" || APPLY_FAILED=1
 done
 
 if [ "$found" = 0 ]; then
@@ -397,7 +425,7 @@ fi
 # (debuggers on PATH / known install roots), so this runs once from the source tree
 # regardless of how many destinations were written. Opt-in via --setup-debuggers so
 # a routine skill copy never triggers a system-package install.
-if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$CHECK_MODE" != 1 ] && [ "$ABORT" != 1 ]; then
+if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$CHECK_MODE" != 1 ] && [ "$ABORT" != 1 ] && [ "$APPLY_FAILED" != 1 ]; then
     setup_script="$SRC_ROOT/using-a-debugger/scripts/setup-debuggers.py"
     if ! is_selected using-a-debugger; then
         echo
@@ -418,4 +446,10 @@ if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$CHECK_MODE" != 1 ] && [ "$ABORT" != 1 ]; th
             "$python_bin" "$setup_script" "${setup_args[@]+"${setup_args[@]}"}" || true
         fi
     fi
+fi
+
+if [ "$APPLY_FAILED" = 1 ]; then
+    echo
+    echo "one or more skills failed to install; see the errors above." >&2
+    exit 1
 fi
