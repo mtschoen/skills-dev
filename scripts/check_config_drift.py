@@ -103,9 +103,9 @@ FIXTURE_DIR_SEGMENTS = frozenset({"workspace", "mock_repo", "fixtures"})
 FLEET_RUFF_PIN = "0.15.15"
 
 # The literal UTF-8 bytes for U+2014 EM DASH. Spelled as an escape, not the
-# character itself, so this file does not trip its own check. No corpus file
-# should contain one (see ~/.claude/notes/feedback_no_em_dashes.md) - swept
-# clean 2026-08-05.
+# character itself, so this file does not trip its own check. House style bans
+# em-dashes in repo content (AI tell, and cp1252 tooling breakage on Windows);
+# the corpus was swept clean 2026-08-05.
 EM_DASH_BYTES = "\u2014".encode()
 
 _PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
