@@ -16,6 +16,8 @@ __pycache__/
 **/.coverage
 coverage.xml
 **/coverage.xml
+coverage.json
+**/coverage.json
 .pytest_cache
 
 .maintenance.json

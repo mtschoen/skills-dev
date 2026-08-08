@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Tests for check_config_drift's pure helper functions.
+"""Tests for check_config_drift.
 
 is_fixture_path and ruff_pin_errors_in_text take plain strings, no git or
 filesystem access, so they are tested directly. tracked_files (and the
 checks built on it) shell out to `git ls-files`, so those get a light
-integration test against a real throwaway git repo instead of a mock.
+integration test against a real throwaway git repo instead of a mock. The
+config/workflow shape checks read files directly, so they run against
+tmp_path directory trees.
 """
 
+import json
+import runpy
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_config_drift as guard
@@ -162,7 +168,251 @@ def test_check_em_dash_flags_tracked_file_with_em_dash(tmp_path):
     assert "bad.md" in errors[0]
 
 
-if __name__ == "__main__":
-    import pytest
+def test_check_em_dash_skips_tracked_file_that_disappears(tmp_path, monkeypatch):
+    monkeypatch.setattr(guard, "tracked_files", lambda _root, _path: ["gone.md"])
 
+    assert guard.check_em_dash(tmp_path, "") == []
+
+
+# --- strip_jsonc_comments ---
+
+
+def test_strip_jsonc_comments_removes_line_comments():
+    text = '{\n  // a comment\n  "a": 1\n}\n'
+    assert json.loads(guard.strip_jsonc_comments(text)) == {"a": 1}
+
+
+def test_strip_jsonc_comments_keeps_double_slash_inside_strings():
+    text = '{"url": "http://example.com//x"}'
+    assert guard.strip_jsonc_comments(text) == text
+
+
+def test_strip_jsonc_comments_handles_escaped_quotes_in_strings():
+    text = '{"a": "she said \\"hi\\" // not a comment"}'
+    assert guard.strip_jsonc_comments(text) == text
+
+
+def test_strip_jsonc_comments_handles_comment_at_eof_without_newline():
+    assert guard.strip_jsonc_comments("{} // trailing") == "{} "
+
+
+# --- expected_markdownlint_config ---
+
+
+def test_expected_config_project_lock_gets_its_own_shape():
+    assert guard.expected_markdownlint_config("project-lock") == (
+        guard.PROJECT_LOCK_CONFIG
+    )
+
+
+def test_expected_config_exception_repos_get_their_override():
+    assert (
+        guard.expected_markdownlint_config("docs-update")
+        == (guard.MODAL_CONFIG_EXCEPTIONS["docs-update"])
+    )
+
+
+def test_expected_config_unknown_repo_gets_the_canonical_shape():
+    assert guard.expected_markdownlint_config("some-new-skill") == (
+        guard.CANONICAL_MODAL_CONFIG
+    )
+
+
+# --- check_markdownlint_config ---
+
+
+def test_check_markdownlint_config_flags_missing_file(tmp_path):
+    errors = guard.check_markdownlint_config(tmp_path, "alpha")
+    assert errors == ["alpha: missing .markdownlint-cli2.jsonc"]
+
+
+def test_check_markdownlint_config_flags_unparseable_jsonc(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "alpha" / ".markdownlint-cli2.jsonc").write_text(
+        "{not json\n", encoding="utf-8"
+    )
+    errors = guard.check_markdownlint_config(tmp_path, "alpha")
+    assert len(errors) == 1
+    assert "did not parse as JSON" in errors[0]
+
+
+def test_check_markdownlint_config_flags_shape_mismatch(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "alpha" / ".markdownlint-cli2.jsonc").write_text(
+        '{"config": {"default": true}}\n', encoding="utf-8"
+    )
+    errors = guard.check_markdownlint_config(tmp_path, "alpha")
+    assert len(errors) == 1
+    assert "does not match its expected shape" in errors[0]
+
+
+def test_check_markdownlint_config_accepts_canonical_shape_with_comments(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    canonical = json.dumps(guard.CANONICAL_MODAL_CONFIG, indent=2)
+    (tmp_path / "alpha" / ".markdownlint-cli2.jsonc").write_text(
+        "// canonical modal config\n" + canonical + "\n", encoding="utf-8"
+    )
+    assert guard.check_markdownlint_config(tmp_path, "alpha") == []
+
+
+# --- check_lint_workflow ---
+
+_GOOD_LINT_YML = """name: lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  markdown:
+    timeout-minutes: 5
+    steps:
+      - uses: DavidAnson/markdownlint-cli2-action@v23
+"""
+
+
+def _write_lint_yml(repo: Path, text: str):
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True, exist_ok=True)
+    (workflows / "lint.yml").write_text(text, encoding="utf-8")
+
+
+def test_check_lint_workflow_flags_missing_file(tmp_path):
+    errors = guard.check_lint_workflow(tmp_path, "alpha")
+    assert errors == ["alpha: missing .github/workflows/lint.yml"]
+
+
+def test_check_lint_workflow_flags_every_missing_invariant(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    _write_lint_yml(tmp_path / "alpha", "jobs:\n  build:\n    steps: []\n")
+    errors = guard.check_lint_workflow(tmp_path, "alpha")
+    assert len(errors) == 5
+
+
+def test_check_lint_workflow_accepts_the_canonical_shape(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    _write_lint_yml(tmp_path / "alpha", _GOOD_LINT_YML)
+    assert guard.check_lint_workflow(tmp_path, "alpha") == []
+
+
+# --- check_ruff_pin ---
+
+
+def test_check_ruff_pin_passes_when_no_workflows_dir(tmp_path):
+    assert guard.check_ruff_pin(tmp_path, "alpha") == []
+
+
+def test_check_ruff_pin_scopes_submodule_and_umbrella_labels(tmp_path):
+    _write_lint_yml(tmp_path / "alpha", "- run: pip install ruff==0.11.0\n")
+    _write_lint_yml(tmp_path, "- run: pip install ruff\n")
+    sub_errors = guard.check_ruff_pin(tmp_path, "alpha")
+    umbrella_errors = guard.check_ruff_pin(tmp_path, "")
+    assert len(sub_errors) == 1 and sub_errors[0].startswith("alpha/lint.yml:")
+    assert len(umbrella_errors) == 1
+    assert umbrella_errors[0].startswith("lint.yml:")
+
+
+# --- check_code_without_ci (shell side) ---
+
+
+def test_check_code_without_ci_flags_missing_shellcheck_step(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
+    _write_lint_yml(repo, "steps:\n  - run: ruff check .\n  - run: pytest\n")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "shellcheck" in errors[0]
+
+
+def test_check_code_without_ci_passes_with_all_steps_present(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    (repo / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
+    _write_lint_yml(
+        repo,
+        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck x.sh\n",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    assert guard.check_code_without_ci(tmp_path, "repo") == []
+
+
+def test_check_code_without_ci_skips_when_lint_yml_missing(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    # The missing lint.yml is check_lint_workflow's finding, not this check's.
+    assert guard.check_code_without_ci(tmp_path, "repo") == []
+
+
+# --- evaluate / main ---
+
+
+def _make_umbrella_repo(tmp_path, *, canonical_config=True):
+    """Build an umbrella-shaped repo with one clean alpha submodule."""
+    root = tmp_path / "umbrella"
+    alpha = root / "alpha"
+    _init_repo(alpha)
+    if canonical_config:
+        config = json.dumps(guard.CANONICAL_MODAL_CONFIG, indent=2)
+        (alpha / ".markdownlint-cli2.jsonc").write_text(config, encoding="utf-8")
+    _write_lint_yml(alpha, _GOOD_LINT_YML)
+    _git("add", "-A", cwd=alpha)
+    _git("commit", "-m", "init", cwd=alpha)
+    _init_repo(root)
+    (root / ".gitmodules").write_text(
+        '[submodule "alpha"]\n\tpath = alpha\n\turl = ../skills-alpha.git\n',
+        encoding="utf-8",
+    )
+    _git("add", ".gitmodules", cwd=root)
+    return root
+
+
+def test_evaluate_empty_gitmodules_exits_two(tmp_path):
+    root = tmp_path / "umbrella"
+    _init_repo(root)
+    (root / ".gitmodules").write_text("", encoding="utf-8")
+    code, lines = guard.evaluate(root)
+    assert code == 2
+    assert any("nothing to check" in line for line in lines)
+
+
+def test_evaluate_clean_repo_exits_zero(tmp_path):
+    code, lines = guard.evaluate(_make_umbrella_repo(tmp_path))
+    assert code == 0
+    assert any(line.startswith("OK:") for line in lines)
+
+
+def test_evaluate_drifted_repo_exits_one(tmp_path):
+    code, lines = guard.evaluate(_make_umbrella_repo(tmp_path, canonical_config=False))
+    assert code == 1
+    assert any("violations detected" in line for line in lines)
+
+
+def test_main_prints_lines_and_exits_with_evaluate_code(monkeypatch, capsys):
+    monkeypatch.setattr(guard, "evaluate", lambda _root: (0, ["OK: fine"]))
+    with pytest.raises(SystemExit) as excinfo:
+        guard.main()
+    assert excinfo.value.code == 0
+    assert "OK: fine" in capsys.readouterr().out
+
+
+def test_script_entry_point_runs_the_fleet_guard():
+    with pytest.raises(SystemExit) as exit_information:
+        runpy.run_path(str(Path(guard.__file__)), run_name="__main__")
+
+    assert exit_information.value.code == 0
+
+
+if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

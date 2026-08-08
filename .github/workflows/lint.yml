@@ -39,8 +39,36 @@ jobs:
       - name: Run unit test suite
         run: pytest tests/test_validate_skills.py
 
+  coverage:
+    # Measures umbrella Python line coverage (scripts/ and ci/) and posts it
+    # as the pr-crew/coverage commit status that pr-crew's coverage gate reads
+    # on the default branch (status contract: pr-crew docs/coverage-gate.md).
+    # ci/post-coverage-status.py is vendored from schoen/pr-crew's ci/ dir
+    # (ruff-formatted and adapted to this repo's workflow outcome contract).
+    # The post step runs `if: always()` so a red suite reports state=error
+    # (gate reads 'unreadable') instead of leaving no status at all.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install skills-ref==0.1.1 pytest==8.3.4 pytest-cov==6.2.1
+      - name: Run full test suite with coverage
+        id: coverage
+        run: pytest tests/ scripts/ ci/ --cov=scripts --cov=ci --cov-report=term-missing --cov-report=json:coverage.json
+      - name: Post coverage status
+        if: always()
+        env:
+          COVERAGE_STEP_OUTCOME: ${{ steps.coverage.outcome }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 ci/post-coverage-status.py
+
   ruff:
-    # Lint + format-check umbrella-owned Python only (scripts/, tests/). Each
+    # Lint + format-check umbrella-owned Python only (scripts/, tests/, ci/). Each
     # skill submodule owns its own gate, so submodules are not checked out and
     # the paths are scoped explicitly (config: pyproject.toml). Zero findings
     # is the bar - see TEST-REPORT.md.
@@ -53,9 +81,9 @@ jobs:
           python-version: '3.x'
       - run: pip install ruff==0.15.15
       - name: ruff check
-        run: ruff check scripts/ tests/
+        run: ruff check scripts/ tests/ ci/
       - name: ruff format --check
-        run: ruff format --check scripts/ tests/
+        run: ruff format --check scripts/ tests/ ci/
 
   shellcheck:
     # Lint umbrella-owned shell scripts only (submodule hooks own their gates).

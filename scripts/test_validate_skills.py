@@ -8,9 +8,11 @@ Runs under pytest, or standalone: python scripts/test_validate_skills.py
 (no third-party dependency).
 """
 
+import runpy
 import shutil
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -136,6 +138,116 @@ def test_evaluate_no_submodules_refuses_vacuous_pass():
         "an empty submodule set must not pass - that hides a broken checkout"
     )
     assert any("vacuous" in line.lower() for line in lines)
+
+
+# --- has_content ---
+
+
+def test_has_content_false_for_missing_dir():
+    missing = Path(tempfile.mkdtemp()) / "not-there"
+    assert not validator.has_content(missing)
+
+
+# --- run_agentskills (real subprocess, stubbed PATH lookup) ---
+
+
+def test_run_agentskills_raises_when_binary_missing():
+    original_shutil = validator.shutil
+    validator.shutil = types.SimpleNamespace(which=lambda _name: None)
+    raised = False
+    try:
+        validator.run_agentskills(Path(tempfile.mkdtemp()))
+    except RuntimeError:
+        raised = True
+    finally:
+        validator.shutil = original_shutil
+    assert raised, "a missing agentskills binary must fail loudly"
+
+
+def test_run_agentskills_invokes_the_resolved_binary():
+    # sys.executable stands in for the resolved binary: python exits non-zero
+    # on the bogus "validate" script argument, exercising the subprocess path.
+    original_shutil = validator.shutil
+    validator.shutil = types.SimpleNamespace(which=lambda _name: sys.executable)
+    try:
+        code, output = validator.run_agentskills(Path(tempfile.mkdtemp()))
+    finally:
+        validator.shutil = original_shutil
+    assert code != 0
+    assert output
+
+
+# --- check_description_brackets ---
+
+
+def test_check_description_brackets_ignores_missing_description():
+    repo = _make_repo({"alpha": "---\nname: alpha\n---\n\n# Title\n"})
+    skill_md = validator.find_skill_md(repo / "alpha")
+    assert validator.check_description_brackets("alpha", skill_md) == []
+
+
+def test_check_description_brackets_flags_angle_brackets():
+    skill = '---\nname: alpha\ndescription: "Uses <task> placeholders."\n---\n\n# T\n'
+    repo = _make_repo({"alpha": skill})
+    skill_md = validator.find_skill_md(repo / "alpha")
+    errors = validator.check_description_brackets("alpha", skill_md)
+    assert len(errors) == 1
+    assert "angle brackets" in errors[0]
+
+
+# --- check_frontmatter_xml_wellformedness ---
+
+
+def test_xml_wellformedness_skips_dir_without_skill_md():
+    skill_dir = Path(tempfile.mkdtemp())
+    assert validator.check_frontmatter_xml_wellformedness(skill_dir, "alpha") == []
+
+
+# --- validate_skill / validate_repo edge branches ---
+
+
+def test_validate_skill_runner_failure_without_output_uses_fallback_message():
+    repo = _make_repo({"alpha": _good_skill("alpha")})
+    errors = validator.validate_skill(repo, "alpha", runner=lambda _dir: (1, "  \n"))
+    assert errors == ["alpha: skills-ref reported invalid (exit 1)"]
+
+
+def test_validate_repo_without_gitmodules_is_an_error():
+    errors, validated, skipped = validator.validate_repo(
+        Path(tempfile.mkdtemp()), runner=_pass_runner
+    )
+    assert validated == 0 and skipped == []
+    assert len(errors) == 1 and ".gitmodules" in errors[0]
+
+
+# --- main ---
+
+
+def test_main_prints_lines_and_exits_with_evaluate_code():
+    original_evaluate = validator.evaluate
+    validator.evaluate = lambda _root: (0, ["OK: all 1 skills valid"])
+    exit_code = None
+    try:
+        validator.main()
+    except SystemExit as exit_:
+        exit_code = exit_.code
+    finally:
+        validator.evaluate = original_evaluate
+    assert exit_code == 0
+
+
+def test_script_entry_point_reports_a_missing_validator():
+    original_which = shutil.which
+    shutil.which = lambda _name: None
+    try:
+        try:
+            runpy.run_path(str(Path(validator.__file__)), run_name="__main__")
+        except RuntimeError as error:
+            assert "agentskills" in str(error)
+        else:
+            raise AssertionError("entry point did not require agentskills")
+    finally:
+        shutil.which = original_which
 
 
 # --- integration: the real agentskills binary (skipped if not installed) ---

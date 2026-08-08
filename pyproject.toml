@@ -1,9 +1,9 @@
 # Ruff configuration for the skills-dev umbrella.
 #
-# Scope: this gate lints UMBRELLA-OWNED Python only (scripts/, tests/). Each
+# Scope: this gate lints UMBRELLA-OWNED Python only (scripts/, tests/, ci/). Each
 # skill is its own git submodule / repo and owns its own lint gate, so the
 # submodule directories are excluded here. The validate command and CI use
-# explicit paths (`ruff check scripts/ tests/`) so adding a new submodule can
+# explicit paths (`ruff check scripts/ tests/ ci/`) so adding a new submodule can
 # never silently break the umbrella's CI; the submodule excludes below are a
 # defensive measure so a manual `ruff check .` from the repo root does not walk
 # into submodule trees. Keep the submodule list in sync with .gitmodules.
@@ -50,3 +50,10 @@ select = ["F", "I", "B", "UP", "SIM", "RET", "PIE", "C4", "W", "RUF", "E741"]
 # Eval scaffold - generated, not enforced (applies when the on-save hook lints
 # a submodule eval file, since those resolve config up to this file).
 "**/evals/**" = ["F401", "F811", "E741"]
+
+# Coverage measurement for the pr-crew coverage gate (posted by the coverage
+# job in .github/workflows/lint.yml via ci/post-coverage-status.py). Test
+# modules are not coverage targets: measuring them inflates the percent with
+# lines that only ever run under the test runner.
+[tool.coverage.run]
+omit = ["scripts/test_*.py", "ci/test_*.py"]
