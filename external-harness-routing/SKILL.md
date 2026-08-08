@@ -64,11 +64,11 @@ Verified on the author's fleet 2026-08. These CLIs drift fast - confirm any flag
 |---|---|---|---|
 | `claude` | `claude -p "prompt"` | `--model <id>` | `--output-format json` for parsing; each `-p` call is a full session on the metered pool |
 | `codex` | `codex exec "prompt"` | `-m <id>` | `exec` is the non-interactive subcommand |
-| `gemini` / `agy` | `gemini -p` / `agy --print` | `agy models` lists ids | Print mode anchors relative paths wrong - absolute paths only |
+| `gemini` / `agy` | `gemini -p` / `agy --print` | `gemini -m <id>` / `agy --model <id>` | `agy models` lists ids; print mode anchors relative paths wrong - absolute paths only |
 | `opencode` | `opencode run "prompt"` | `-m provider/model` | Good home for local-model lanes (zero marginal cost) |
-| `kimi` | `kimi -p "prompt"` | CLI default or config | Run dispatches serially, one at a time; managed OAuth expiry needs an interactive login |
-| `qwen` | `qwen -p "prompt"` | settings-routed | `--output-format json` emits a single-line JSON array, `stream-json` emits JSONL; never pass `--bare` if you want settings-routed models; flag behavior drifts between versions |
-| `pi` | see `pi --help` | config | Headless runs can hang before the first API call - see hang detection below |
+| `kimi` | `kimi -p "prompt"` | `-m <id>` | Run dispatches serially, one at a time; managed OAuth expiry needs an interactive login |
+| `qwen` | `qwen -p "prompt"` | `-m <id>` | `--output-format json` emits a single-line JSON array, `stream-json` emits JSONL; flag behavior drifts between versions |
+| `pi` | see `pi --help` | `--model <id>` | Headless runs can hang before the first API call - see hang detection below |
 
 Where a fleet dispatch library exists (the author's is `llm_harness`, part of [schoen-lab](https://github.com/mtschoen/schoen-lab)), prefer it over hand-rolled subprocess calls: it already owns budgets, streaming, output parsing, and the quoting traps.
 

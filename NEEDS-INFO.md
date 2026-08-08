@@ -1,25 +1,21 @@
 # NEEDS-INFO
 
-The skill content for `external-harness-routing` is authored and committed
-(commit `a1d64a1`) as a plain directory at `external-harness-routing/`, with
-all fleet gates green (agentskills validate, markdownlint, validate_skills.py,
-ruff, shellcheck, pytest 188 passed, aislop ci 0 findings). What remains is
-the repo's documented submodule conversion, which this run cannot perform
-because it forbids push/fetch and other outward actions. Blocking questions:
+The explicit-model routing table is fixed in this iteration. The required
+submodule conversion remains blocked by two constraints imposed on this run:
 
-- The new-skill workflow (AGENTS.md "Adding a new skill", steps 2-8) requires
-  creating the public GitHub repo `mtschoen/skills-external-harness-routing`,
-  pushing an initial commit, and running `git submodule add
-  ../skills-external-harness-routing.git external-harness-routing`. This run
-  may not push or create remote repos. Should the operator run those steps
-  after merging this branch (the committed directory is conversion-ready:
-  move the files into the new repo, `git rm` the plain dir here, then
-  `submodule add`), or should a follow-up pr-crew run with network write
-  access do the conversion?
-- The skill name `external-harness-routing` is inferred from the branch name
-  (`agent/3608-skill-idea-external-harness-rout`). Confirm the name before
-  the repo is created, since the repo name (`skills-external-harness-routing`)
-  is derived from it and is hard to change later.
-- Until the conversion happens, `install-skills.sh` will not pick up the new
-  skill (the installer only ships submodule dirs, not plain directories), so
-  the dry-run check in step 6 of the workflow was not applicable here.
+- A read-only `gh repo view` confirms that
+  `mtschoen/skills-external-harness-routing` does not exist. The documented
+  new-skill workflow requires creating that public repository and pushing the
+  skill's initial commit before adding the relative-URL submodule. This run
+  explicitly forbids push and fetch, so it cannot create a cloneable submodule
+  remote. Either pre-create and populate the repository, or authorize a run
+  that may perform the initial push.
+- A correct conversion must add an `external-harness-routing` entry to
+  `.gitmodules`, but `.gitmodules` is absent from this iteration's allowed file
+  scope. The prompt directs the agent to write `NEEDS-INFO.md` instead of
+  expanding scope. Include `.gitmodules` in the next run's allowed files.
+
+Creating only a local gitlink would make the installer dry-run pass here while
+leaving recursive CI checkout unable to clone the skill. The plain directory
+is therefore left unchanged until the remote and file-scope blockers are
+resolved.
