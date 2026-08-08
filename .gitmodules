@@ -67,3 +67,6 @@
 [submodule "project-lock"]
 	path = project-lock
 	url = ../skills-project-lock.git
+[submodule "external-harness-routing"]
+	path = external-harness-routing
+	url = ../skills-external-harness-routing.git

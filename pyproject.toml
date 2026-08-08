@@ -19,6 +19,7 @@ exclude = [
     "cost-estimator/**",
     "docs-update/**",
     "escalate-over-shortcut/**",
+    "external-harness-routing/**",
     "fast-tests/**",
     "find-task/**",
     "fleet-orchestration/**",
