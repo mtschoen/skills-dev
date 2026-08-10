@@ -49,6 +49,11 @@ jobs:
     # (gate reads 'unreadable') instead of leaving no status at all.
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # GitHub's default GITHUB_TOKEN is read-only, so posting a commit status
+    # needs this explicitly. Gitea ignores the block harmlessly.
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/checkout@v4
         with:

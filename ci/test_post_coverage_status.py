@@ -53,6 +53,7 @@ def test_post_uses_urlopen_default_verified_context(
 def test_post_constructs_gitea_status_request(
     monkeypatch: pytest.MonkeyPatch, coverage_status_module
 ) -> None:
+    monkeypatch.delenv("GITHUB_API_URL", raising=False)
     monkeypatch.setenv("GITHUB_SERVER_URL", "https://gitea.example.test")
     monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repository")
     monkeypatch.setenv("GITHUB_SHA", "abc123")
@@ -78,6 +79,33 @@ def test_post_constructs_gitea_status_request(
         "description": "87.35% line coverage",
         "target_url": ("https://gitea.example.test/owner/repository/actions/runs/456"),
     }
+
+
+def test_post_uses_github_api_url_when_set(
+    monkeypatch: pytest.MonkeyPatch, coverage_status_module
+) -> None:
+    """GitHub Actions must not get Gitea's /api/v1 path appended.
+
+    GITHUB_SERVER_URL is https://github.com there, and hard-coding /api/v1
+    onto it produced https://github.com/api/v1/... which GitHub answers with
+    HTTP 410 Gone, reddening main on every push.
+    """
+    monkeypatch.setenv("GITHUB_API_URL", "https://api.github.com")
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repository")
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    monkeypatch.setenv("GITHUB_RUN_ID", "456")
+    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+    urlopen = mock.Mock(return_value=mock.Mock())
+    monkeypatch.setattr(coverage_status_module.urllib.request, "urlopen", urlopen)
+
+    coverage_status_module._post("success", "87.35% line coverage")
+
+    request = urlopen.call_args.args[0]
+    assert request.full_url == (
+        "https://api.github.com/repos/owner/repository/statuses/abc123"
+    )
+    assert "/api/v1/" not in request.full_url
 
 
 def test_post_propagates_network_failure(

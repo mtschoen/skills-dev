@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Post the pr-crew/coverage commit status from CI (stdlib only).
 
-Computes line-coverage percent and POSTs it as a Gitea commit status
+Computes line-coverage percent and POSTs it as a commit status
 (context=pr-crew/coverage) on $GITHUB_SHA using the auto $GITHUB_TOKEN.
+Works on both GitHub Actions and Gitea Actions: the API root comes from
+GITHUB_API_URL, which each forge sets to its own base. The posting job needs
+`permissions: statuses: write` on GitHub, where the default token is read-only.
 
 Percent source:
   default                -> pytest-cov coverage.json ['totals']['percent_covered']
@@ -32,12 +35,20 @@ def _percent_from_coverage_json(path: str) -> float:
         return float(json.load(handle)["totals"]["percent_covered"])
 
 
+def _is_build_output(path: str) -> bool:
+    """True for a path inside a bin/ or obj/ directory, on any platform."""
+    normalized = path.replace("\\", "/")
+    return "/bin/" in normalized or "/obj/" in normalized
+
+
 def _percent_from_cobertura(patterns: list[str]) -> float:
+    # glob returns native separators, so a bare "/bin/" test silently matches
+    # nothing on Windows and build output gets parsed as a coverage report.
     paths = [
         path
         for pattern in patterns
         for path in glob.glob(pattern, recursive=True)
-        if "/bin/" not in path and "/obj/" not in path
+        if not _is_build_output(path)
     ]
     if not paths:
         raise FileNotFoundError("no Cobertura XML matched")
@@ -55,6 +66,22 @@ def _percent_from_cobertura(patterns: list[str]) -> float:
     return 100.0 * sum(1 for covered in lines.values() if covered) / len(lines)
 
 
+def _api_root() -> str:
+    """Base URL for the statuses API, on either forge.
+
+    Both GitHub Actions and Gitea Actions export GITHUB_API_URL already pointing
+    at their own API root (https://api.github.com and <gitea>/api/v1
+    respectively), so preferring it makes this script forge-agnostic. The
+    fallback derives Gitea's layout from GITHUB_SERVER_URL for older runners
+    that do not set GITHUB_API_URL. Hard-coding /api/v1 against GITHUB_SERVER_URL
+    is what made this fail on GitHub with HTTP 410 Gone.
+    """
+    api_url = os.environ.get("GITHUB_API_URL")
+    if api_url:
+        return api_url.rstrip("/")
+    return f"{os.environ['GITHUB_SERVER_URL'].rstrip('/')}/api/v1"
+
+
 def _post(state: str, description: str) -> None:
     server = os.environ["GITHUB_SERVER_URL"]
     repository = os.environ["GITHUB_REPOSITORY"]
@@ -69,7 +96,7 @@ def _post(state: str, description: str) -> None:
         }
     ).encode()
     request = urllib.request.Request(
-        f"{server}/api/v1/repos/{repository}/statuses/{sha}",
+        f"{_api_root()}/repos/{repository}/statuses/{sha}",
         data=body,
         method="POST",
         headers={
