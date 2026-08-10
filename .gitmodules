@@ -70,3 +70,6 @@
 [submodule "external-harness-routing"]
 	path = external-harness-routing
 	url = ../skills-external-harness-routing.git
+[submodule "check-memory"]
+	path = check-memory
+	url = ../skills-check-memory.git
