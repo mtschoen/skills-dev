@@ -9,7 +9,11 @@ This repo is the umbrella that ties together each skill's own submodule. Every t
 The workflow:
 
 1. Author the skill content locally in a temporary `<name>/` directory inside skills-dev.
-2. Create the remote repo: `gh repo create mtschoen/skills-<name> --public`. It must be **public** - umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs (the run token only covers skills-dev itself).
+2. Create the remote repo on **both forges** - the `.gitmodules` relative URL resolves against whichever remote the umbrella was cloned from, so the child must exist everywhere the umbrella lives, or every recursive submodule init from the missing forge fails:
+   - GitHub: `gh repo create mtschoen/skills-<name> --public`.
+   - Gitea: push-to-create is disabled, so create `schoen/skills-<name>` via the API with the schoen token: `curl -X POST -H "Authorization: token $(cat ~/.gitea-token)" -H "Content-Type: application/json" -d '{"name":"skills-<name>","private":false,"auto_init":false}' https://gitea.fleet.sticktoitive.net/api/v1/user/repos`.
+
+   Both must be **public** - umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs (the run token only covers skills-dev itself).
 3. Init the local dir as git, commit, and push. (Use the default git identity for direct main-branch commits.)
 4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
 5. Add as submodule. The `.gitmodules` **relative URL** `../skills-<name>.git` resolves against skills-dev's `origin`, which already has the initial commit from step 3:
