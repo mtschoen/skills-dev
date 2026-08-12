@@ -50,9 +50,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # GitHub's default GITHUB_TOKEN is read-only, so posting a commit status
-    # needs this explicitly. Gitea ignores the block harmlessly.
+    # needs `statuses: write` explicitly there. Gitea Actions has no `statuses`
+    # scope (GitHub-only per docs.gitea.com/usage/actions/token-permissions),
+    # so that line is silently dropped on Gitea - but Gitea DOES parse and
+    # enforce the rest of this block, replacing its default read+write token
+    # mode with only what's listed. Gitea's commit-status POST route requires
+    # write access to the Code unit (reqRepoWriter(unit.TypeCode) in
+    # go-gitea/gitea routers/api/v1/api.go), which `contents: write` maps to
+    # (services/actions/token_permission_design.md). `contents: read` here
+    # left that unit read-only on Gitea and made every status post 403.
     permissions:
-      contents: read
+      contents: write
       statuses: write
     steps:
       - uses: actions/checkout@v4
