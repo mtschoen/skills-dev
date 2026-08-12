@@ -278,28 +278,47 @@ if not exist "!dest!" (
 )
 
 set "tmpout=%TEMP%\install-skills-!agent!-!n!.txt"
-robocopy "!staging!" "!dest!" /MIR /L !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /FP > "!tmpout!"
+set "preview=%TEMP%\install-skills-preview-!agent!-!n!.txt"
+rem Include every source-side metadata class; :fmt_line decides by byte content.
+robocopy "!staging!" "!dest!" /MIR /L !ROBO_EXCL! /IS /IT /IM /NJH /NJS /NDL /NP /NS /FP > "!tmpout!"
 set "rc=!errorlevel!"
 
 if !rc! geq 8 (
     echo robocopy /L failed for !n! ^(!agent!, exit !rc!^) 1>&2
     del "!tmpout!" 2>nul
+    del "!preview!" 2>nul
     rmdir /s /q "!staging!"
     set "FATAL=1"
     exit /b 0
 )
 
-if !rc! equ 0 (
+set "COMPARE_FOUND=0"
+set "COMPARE_FAILED=0"
+set /a "ROBO_EXTRA=rc & 2"
+del "!preview!" 2>nul
+for /f "usebackq delims=" %%L in ("!tmpout!") do call :fmt_line "!staging!" "!dest!" "%%L" >> "!preview!"
+del "!tmpout!" 2>nul
+if not "!ROBO_EXTRA!"=="0" set "COMPARE_FOUND=1"
+
+if "!COMPARE_FAILED!"=="1" (
+    echo could not compare !n! at !dest! 1>&2
+    del "!preview!" 2>nul
+    rmdir /s /q "!staging!"
+    set "FATAL=1"
+    exit /b 0
+)
+
+if "!COMPARE_FOUND!"=="0" (
     echo unchanged !n! ^(!agent!^)
-    del "!tmpout!" 2>nul
+    del "!preview!" 2>nul
     rmdir /s /q "!staging!"
     exit /b 0
 )
 
 echo.
 echo update !n! -^> !dest! ^(!agent!^)
-for /f "usebackq delims=" %%L in ("!tmpout!") do call :fmt_line "!staging!" "!dest!" "%%L"
-del "!tmpout!" 2>nul
+if exist "!preview!" type "!preview!"
+del "!preview!" 2>nul
 
 if "!CHECK_MODE!"=="1" set "DRIFT_FOUND=1"
 
@@ -316,7 +335,7 @@ if errorlevel 1 (
     exit /b 0
 )
 if not exist "!dest_root!" mkdir "!dest_root!"
-robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /NJH /NJS /NDL /NP /NS /NC /NFL >nul
+robocopy "!staging!" "!dest!" /MIR !ROBO_EXCL! /IS /IT /IM /NJH /NJS /NDL /NP /NS /NC /NFL >nul
 set "rc=!errorlevel!"
 rmdir /s /q "!staging!"
 if !rc! geq 8 (
@@ -331,9 +350,11 @@ exit /b 0
 rem %1=staging dir, %2=dest dir, %3=one raw robocopy /L line. Emit a
 rem git-status-style line (+ new / ~ changed / - removed) with the absolute
 rem prefix stripped to a skill-relative path. Robocopy /FP prints the staging
-rem (TEMP) path for source-side classes (New File/Newer/Older/Changed) and the
-rem dest path for *EXTRA File (dest-only -> would be removed by /MIR). Stripping
-rem the prefix keeps the TEMP staging dir out of the user-facing preview.
+rem (TEMP) path for source-side classes and the dest path for *EXTRA File
+rem (dest-only -> would be removed by /MIR). Stripping the prefix keeps the
+rem TEMP staging dir out of the user-facing preview.
+rem Robocopy classifies files by metadata, so verify source-side candidates by
+rem byte-exact content before reporting them, matching the shell installer.
 set "_st=%~1"
 set "_de=%~2"
 set "_ln=%~3"
@@ -343,12 +364,28 @@ set "_note="
 set "_after=!_ln:*%_st%\=!"
 if not "!_after!"=="!_ln!" (
     set "_rel=!_after!"
-    if not "!_ln:New File=!"=="!_ln!" (set "_sym=+" & set "_note=new") else (set "_sym=~" & set "_note=changed")
+    if not exist "!_de!\!_rel!" (
+        set "_sym=+"
+        set "_note=new"
+    ) else (
+        git diff --no-index --quiet --no-ext-diff --no-textconv -- "!_st!\!_rel!" "!_de!\!_rel!" >nul 2>nul
+        set "_compare_rc=!errorlevel!"
+        if "!_compare_rc!"=="0" exit /b 0
+        if not "!_compare_rc!"=="1" (
+            set "COMPARE_FAILED=1"
+            exit /b 0
+        )
+        set "_sym=~"
+        set "_note=changed"
+    )
 ) else (
     set "_after=!_ln:*%_de%\=!"
     if not "!_after!"=="!_ln!" (set "_rel=!_after!" & set "_sym=-" & set "_note=removed, no longer shipped")
 )
-if defined _rel echo   !_sym! !_rel! ^(!_note!^)
+if defined _rel (
+    set "COMPARE_FOUND=1"
+    echo   !_sym! !_rel! ^(!_note!^)
+)
 exit /b 0
 
 :build_staging

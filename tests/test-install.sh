@@ -133,12 +133,130 @@ if command -v cmd.exe >/dev/null 2>&1; then
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude demoskill >/dev/null
     assert_install ".bat" "$HOME_BAT/.claude/skills"
 
+    echo "[.bat] content-identical check ignores metadata drift"
+    touch -t 203001010101 "$SRC2/demoskill/SKILL.md"
+    bat_metadata_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" --check --claude demoskill 2>&1)"
+    bat_metadata_rc=$?
+    if [ "$bat_metadata_rc" -eq 0 ]; then pass ".bat: metadata-only check exits 0"; else fail ".bat: metadata-only check exit $bat_metadata_rc"; fi
+    case "$bat_metadata_out" in
+        *"unchanged demoskill (claude)"*) pass ".bat: metadata-only drift reports unchanged" ;;
+        *) fail ".bat: metadata-only drift did not report unchanged" ;;
+    esac
+    case "$bat_metadata_out" in
+        *"update demoskill"*) fail ".bat: metadata-only drift reported an update" ;;
+        *) pass ".bat: metadata-only drift reports no update" ;;
+    esac
+
+    echo "[.bat] dry run catches equal-size content drift with matched mtime"
+    bat_equal_source="$SRC2/demoskill/references/guide.md"
+    bat_equal_dest="$HOME_BAT/.claude/skills/demoskill/references/guide.md"
+    printf '%s\n' "alt" > "$bat_equal_dest"
+    touch -r "$bat_equal_source" "$bat_equal_dest"
+    bat_equal_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -n --claude demoskill 2>&1)"
+    bat_equal_rc=$?
+    if [ "$bat_equal_rc" -eq 0 ]; then pass ".bat: equal-metadata dry run exits 0"; else fail ".bat: equal-metadata dry run exit $bat_equal_rc"; fi
+    case "$bat_equal_out" in
+        *"update demoskill"*) pass ".bat: equal-metadata content drift reports an update" ;;
+        *) fail ".bat: equal-metadata content drift did not report an update" ;;
+    esac
+    case "$bat_equal_out" in
+        *"~ references\\guide.md (changed)"*) pass ".bat: equal-metadata content drift appears in preview" ;;
+        *) fail ".bat: equal-metadata content drift missing from preview" ;;
+    esac
+    bat_equal_apply_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude demoskill 2>&1)"
+    bat_equal_apply_rc=$?
+    if [ "$bat_equal_apply_rc" -eq 0 ]; then pass ".bat: equal-metadata apply exits 0"; else fail ".bat: equal-metadata apply exit $bat_equal_apply_rc"; fi
+    case "$bat_equal_apply_out" in
+        *"updated."*) pass ".bat: equal-metadata apply reports success" ;;
+        *) fail ".bat: equal-metadata apply did not report success" ;;
+    esac
+    if diff -q "$bat_equal_source" "$bat_equal_dest" >/dev/null; then
+        pass ".bat: equal-metadata apply replaces stale bytes"
+    else
+        fail ".bat: equal-metadata apply left stale bytes"
+    fi
+
+    echo "[.bat] dry run reports CRLF-only drift"
+    bat_skill="$HOME_BAT/.claude/skills/demoskill/SKILL.md"
+    sed 's/\r$//; s/$/\r/' "$SRC2/demoskill/SKILL.md" > "$bat_skill.crlf"
+    mv "$bat_skill.crlf" "$bat_skill"
+    if diff -q --strip-trailing-cr "$SRC2/demoskill/SKILL.md" "$bat_skill" >/dev/null; then
+        pass ".bat: CRLF fixture has equivalent text content"
+    else
+        fail ".bat: CRLF fixture content differs"
+    fi
+    bat_crlf_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -n --claude demoskill 2>&1)"
+    bat_crlf_rc=$?
+    if [ "$bat_crlf_rc" -eq 0 ]; then pass ".bat: CRLF-only dry run exits 0"; else fail ".bat: CRLF-only dry run exit $bat_crlf_rc"; fi
+    case "$bat_crlf_out" in
+        *"update demoskill"*) pass ".bat: CRLF-only drift reports an update" ;;
+        *) fail ".bat: CRLF-only drift did not report an update" ;;
+    esac
+    case "$bat_crlf_out" in
+        *"~ SKILL.md (changed)"*) pass ".bat: CRLF-only drift appears in preview" ;;
+        *) fail ".bat: CRLF-only drift missing from preview" ;;
+    esac
+
+    echo "[.bat] dry run retains structural drift"
+    mkdir -p "$HOME_BAT/.claude/skills/demoskill/empty-stale"
+    bat_empty_dir_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -n --claude demoskill 2>&1)"
+    bat_empty_dir_rc=$?
+    if [ "$bat_empty_dir_rc" -eq 0 ]; then pass ".bat: structural dry run exits 0"; else fail ".bat: structural dry run exit $bat_empty_dir_rc"; fi
+    case "$bat_empty_dir_out" in
+        *"update demoskill"*) pass ".bat: extra empty directory reports an update" ;;
+        *) fail ".bat: extra empty directory did not report an update" ;;
+    esac
+    rmdir "$HOME_BAT/.claude/skills/demoskill/empty-stale"
+
+    echo "[.bat] dry run preserves content drift preview"
+    printf '%s\n' "BATCH-CONTENT-DRIFT" >> "$SRC2/demoskill/SKILL.md"
+    printf '%s\n' "added" > "$SRC2/demoskill/references/added.md"
+    ( cd "$SRC2/demoskill" && git add SKILL.md references/added.md )
+    printf '%s\n' "stale" > "$HOME_BAT/.claude/skills/demoskill/references/stale.md"
+    bat_preview_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -n --claude demoskill 2>&1)"
+    bat_preview_rc=$?
+    if [ "$bat_preview_rc" -eq 0 ]; then pass ".bat: content drift dry run exits 0"; else fail ".bat: content drift dry run exit $bat_preview_rc"; fi
+    case "$bat_preview_out" in
+        *"~ SKILL.md (changed)"*) pass ".bat: changed file remains in preview" ;;
+        *) fail ".bat: changed file missing from preview" ;;
+    esac
+    case "$bat_preview_out" in
+        *"+ references\\added.md (new)"*) pass ".bat: new file remains in preview" ;;
+        *) fail ".bat: new file missing from preview" ;;
+    esac
+    case "$bat_preview_out" in
+        *"- references\\stale.md (removed, no longer shipped)"*) pass ".bat: removed file remains in preview" ;;
+        *) fail ".bat: removed file missing from preview" ;;
+    esac
+
     echo "[.bat] cleanup of prior-install cruft"
     mkdir -p "$HOME_BAT/.claude/skills/demoskill/reports"
     echo stale > "$HOME_BAT/.claude/skills/demoskill/reports/old.txt"
     USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
         cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude demoskill >/dev/null
     assert_absent ".bat: stale reports/ purged" "$HOME_BAT/.claude/skills/demoskill/reports"
+
+    echo "[.bat] comparison infrastructure failure is fatal"
+    stub_git="$WORK/stub_git"; mkdir -p "$stub_git"
+    real_git_win="$(cygpath -w "$(command -v git)")"
+    printf '%s\r\n' '@echo off' 'if /i "%~1"=="diff" exit /b 2' \
+        "\"$real_git_win\" %*" 'exit /b %errorlevel%' > "$stub_git/git.cmd"
+    touch -t 203101010101 "$SRC2/demoskill/SKILL.md"
+    bat_compare_failure_out="$(PATH="$stub_git:$PATH" USERPROFILE="$HOME_BAT_WIN" \
+        SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" --check --claude demoskill 2>&1)"
+    bat_compare_failure_rc=$?
+    if [ "$bat_compare_failure_rc" -ne 0 ]; then pass ".bat: comparison failure exits nonzero"; else fail ".bat: comparison failure exit $bat_compare_failure_rc"; fi
+    case "$bat_compare_failure_out" in
+        *"could not compare demoskill"*) pass ".bat: comparison failure is reported" ;;
+        *) fail ".bat: comparison failure was not reported" ;;
+    esac
 
     echo "[.bat] Hermes install and read-only check"
     HOME_HERMES="$WORK/home_hermes"; mkdir -p "$HOME_HERMES"
