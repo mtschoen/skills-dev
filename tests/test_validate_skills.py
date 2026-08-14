@@ -213,8 +213,11 @@ class TestPersonalInfrastructureHosts:
             tmp_path,
             "demo",
             {
-                "SKILL.md": "Push to gitea.llamabox.internal when done.\n",
-                "docs/notes.md": "Coverage bar per llamalab/project-tracker.\n",
+                "SKILL.md": "Push to gitea.example.invalid when done.\n",
+                "docs/notes.md": (
+                    "Coverage bar per llamabox/project-tracker.\n"
+                    "Coverage bar per llamalab/project-tracker.\n"
+                ),
             },
         )
         errors = check_portability(tmp_path, "demo")
