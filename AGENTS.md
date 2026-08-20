@@ -15,7 +15,7 @@ The workflow:
 
    Both must be **public** - umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs (the run token only covers skills-dev itself).
 3. Init the local dir as git, commit, and push. (Use the default git identity for direct main-branch commits.)
-4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd.
+4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd - and the handle can survive even that (observed 2026-08-20: contents deleted, empty dir stuck busy across retries). PowerShell `Remove-Item -Recurse -Force` clears it; clear it fully, because a leftover non-git dir makes `git submodule add` fail with "already exists and is not a valid git repo".
 5. Add as submodule. The `.gitmodules` **relative URL** `../skills-<name>.git` resolves against skills-dev's `origin`, which already has the initial commit from step 3:
 
    ```bash
@@ -31,7 +31,7 @@ The workflow:
 
 - Repo names use the `skills-<name>` prefix. The skills-dev submodule path is the bare `<name>` (no prefix).
 - `.gitmodules` uses **relative URLs** (`../skills-<name>.git`), which resolve against whichever remote the umbrella was cloned from.
-- Each submodule's `origin` is its own GitHub repo over SSH (`git@github.com:mtschoen/skills-<name>.git`), set by `git submodule add`. Don't run `git submodule sync` after manually fixing a submodule's `origin` URL - it can overwrite working-tree URLs from `.gitmodules` resolution.
+- Each submodule's `origin` is its own GitHub repo over SSH (`git@github.com:mtschoen/skills-<name>.git`). `git submodule add` does NOT guarantee this: it sets the working-tree `origin` from the resolved relative URL, i.e. whatever forge the umbrella clone's `origin` points at (Gitea on chonkers). After adding, reset it - `git -C <name> remote set-url origin git@github.com:mtschoen/skills-<name>.git` - and add a `gitea` remote for the Gitea sibling. Don't run `git submodule sync` after manually fixing a submodule's `origin` URL - it can overwrite working-tree URLs from `.gitmodules` resolution.
 - The submodule directories in skills-dev are **gitfiles**: `<sub>/.git` is a file reading `gitdir: ../../.git/modules/<sub>`, so config and refs live under `.git/modules/<sub>/`, not in the submodule directory. Two consequences worth knowing: `git rev-parse --git-common-dir` from a submodule points **outside** its own checkout, and `git worktree list --porcelain` reports that git directory rather than the working tree - so neither can be used to derive a submodule's checkout root. Walk up the filesystem for the nearest `.git` entry instead.
 - A skill ships extra top-level content (beyond `SKILL.md` + `scripts/` + `references/` + `assets/`) by listing it in a `.skillpack` file at the skill's repo root. Current users: `progress-beacon` (`hooks/`), `cost-estimator` (`REPORT_TEMPLATE.md`). The `.skillpack` file is itself never installed.
 
