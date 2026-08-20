@@ -18,6 +18,7 @@ exclude = [
     "capture-idea/**",
     "cost-estimator/**",
     "docs-update/**",
+    "effective-refactor/**",
     "escalate-over-shortcut/**",
     "external-harness-routing/**",
     "fast-tests/**",

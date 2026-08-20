@@ -73,3 +73,6 @@
 [submodule "check-memory"]
 	path = check-memory
 	url = ../skills-check-memory.git
+[submodule "effective-refactor"]
+	path = effective-refactor
+	url = ../skills-effective-refactor.git
