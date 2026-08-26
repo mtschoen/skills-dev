@@ -136,6 +136,97 @@ def test_check_code_without_ci_flags_missing_python_job(tmp_path):
     assert "ruff+pytest" in errors[0]
 
 
+def test_check_code_without_ci_flags_ruff_targeting_wrong_directory(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "evals").mkdir()
+    (repo / "evals" / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "lint.yml").write_text(
+        "jobs:\n  python:\n    steps:\n      - run: ruff check scripts/\n      - run: pytest evals/\n",
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "ruff+pytest" in errors[0]
+
+
+def test_check_code_without_ci_flags_pytest_targeting_wrong_directory(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "evals").mkdir()
+    (repo / "evals" / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "lint.yml").write_text(
+        "jobs:\n  python:\n    steps:\n      - run: ruff check evals/\n      - run: pytest tests/\n",
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "ruff+pytest" in errors[0]
+
+
+def test_check_code_without_ci_flags_working_directory_mismatch(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "evals").mkdir()
+    (repo / "evals" / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "lint.yml").write_text(
+        "jobs:\n  python:\n    defaults:\n      run:\n        working-directory: other_directory\n    steps:\n      - run: ruff check .\n      - run: pytest .\n",
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "ruff+pytest" in errors[0]
+
+
+def test_check_code_without_ci_accepts_covering_ruff_and_pytest(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "evals").mkdir()
+    (repo / "evals" / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "lint.yml").write_text(
+        "jobs:\n  python:\n    steps:\n      - run: ruff check evals/\n      - run: pytest evals/\n",
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    assert guard.check_code_without_ci(tmp_path, "repo") == []
+
+
+def test_check_code_without_ci_accepts_multiline_pytest_script(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "evals").mkdir()
+    (repo / "evals" / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "lint.yml").write_text(
+        "jobs:\n  python:\n    steps:\n      - run: ruff check evals/\n      - run: |\n          set +e\n          pytest evals/ --ignore=evals/scenarios\n",
+        encoding="utf-8",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    assert guard.check_code_without_ci(tmp_path, "repo") == []
+
+
 def test_check_code_without_ci_ignores_fixture_only_python(tmp_path):
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -296,6 +387,74 @@ def test_check_lint_workflow_accepts_the_canonical_shape(tmp_path):
     assert guard.check_lint_workflow(tmp_path, "alpha") == []
 
 
+def test_check_lint_workflow_flags_wrong_push_branch(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    _write_lint_yml(
+        tmp_path / "alpha",
+        """name: lint
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  markdown:
+    timeout-minutes: 5
+    steps:
+      - uses: DavidAnson/markdownlint-cli2-action@v23
+""",
+    )
+    errors = guard.check_lint_workflow(tmp_path, "alpha")
+    assert len(errors) == 1
+    assert "push trigger is not branch-filtered to main" in errors[0]
+
+
+def test_check_lint_workflow_flags_wrong_pull_request_branch(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    _write_lint_yml(
+        tmp_path / "alpha",
+        """name: lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+jobs:
+  markdown:
+    timeout-minutes: 5
+    steps:
+      - uses: DavidAnson/markdownlint-cli2-action@v23
+""",
+    )
+    errors = guard.check_lint_workflow(tmp_path, "alpha")
+    assert len(errors) == 1
+    assert "pull_request trigger is not branch-filtered to main" in errors[0]
+
+
+def test_check_lint_workflow_flags_missing_workflow_dispatch(tmp_path):
+    (tmp_path / "alpha").mkdir()
+    _write_lint_yml(
+        tmp_path / "alpha",
+        """name: lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  markdown:
+    timeout-minutes: 5
+    steps:
+      - uses: DavidAnson/markdownlint-cli2-action@v23
+""",
+    )
+    errors = guard.check_lint_workflow(tmp_path, "alpha")
+    assert len(errors) == 1
+    assert "missing a workflow_dispatch trigger" in errors[0]
+
+
 # --- check_ruff_pin ---
 
 
@@ -329,6 +488,89 @@ def test_check_code_without_ci_flags_missing_shellcheck_step(tmp_path):
     assert "shellcheck" in errors[0]
 
 
+def test_check_code_without_ci_flags_shellcheck_scandir_with_no_matching_scripts(
+    tmp_path,
+):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "evals").mkdir()
+    (repo / "evals" / "probe.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
+    _write_lint_yml(
+        repo,
+        """name: lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  shell:
+    timeout-minutes: 5
+    steps:
+      - uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: './hooks'
+""",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "shellcheck" in errors[0]
+
+
+def test_check_code_without_ci_accepts_shellcheck_scandir_covering_scripts(tmp_path):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "hooks").mkdir()
+    (repo / "hooks" / "prompt-reminder.sh").write_text(
+        "#!/bin/sh\ntrue\n", encoding="utf-8"
+    )
+    _write_lint_yml(
+        repo,
+        """name: lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  shell:
+    timeout-minutes: 5
+    steps:
+      - uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: './hooks'
+""",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    assert guard.check_code_without_ci(tmp_path, "repo") == []
+
+
+def test_check_code_without_ci_flags_shellcheck_explicit_paths_matching_no_scripts(
+    tmp_path,
+):
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "run.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
+    _write_lint_yml(
+        repo,
+        "jobs:\n  shell:\n    steps:\n      - run: shellcheck tests/*.sh\n",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "shellcheck" in errors[0]
+
+
 def test_check_code_without_ci_passes_with_all_steps_present(tmp_path):
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -336,7 +578,7 @@ def test_check_code_without_ci_passes_with_all_steps_present(tmp_path):
     (repo / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
     _write_lint_yml(
         repo,
-        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck x.sh\n",
+        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck deploy.sh\n",
     )
     _git("add", "-A", cwd=repo)
     _git("commit", "-m", "init", cwd=repo)
