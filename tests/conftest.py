@@ -13,6 +13,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 INSTALL_SKILLS_SH = REPO_ROOT / "install-skills.sh"
 PUSH_ALL_SH = REPO_ROOT / "scripts" / "push-all.sh"
 PULL_ALL_SH = REPO_ROOT / "scripts" / "pull-all.sh"
+MANAGE_HOOKS_PY = REPO_ROOT / "scripts" / "manage_hooks.py"
+HOOK_DEFINITIONS_PY = REPO_ROOT / "scripts" / "hook_definitions.py"
+HOOK_CLAUDE_PY = REPO_ROOT / "scripts" / "hook_claude.py"
 
 
 @pytest.fixture()
@@ -21,7 +24,7 @@ def tmp_repo(tmp_path):
 
     Returns a Path to the repo root with:
       - install-skills.sh at the root
-      - scripts/push-all.sh and scripts/pull-all.sh in scripts/
+      - scripts/push-all.sh, scripts/pull-all.sh, scripts/manage_hooks.py in scripts/
 
     """
     repo_root = tmp_path / "skills-repo"
@@ -34,10 +37,16 @@ def tmp_repo(tmp_path):
     if INSTALL_SKILLS_SH.exists():
         (repo_root / "install-skills.sh").write_text(INSTALL_SKILLS_SH.read_text())
 
-    # Create scripts/ directory and copy push/pull scripts
+    # Create scripts/ directory and copy push/pull/hooks scripts
     scripts_dir = repo_root / "scripts"
     scripts_dir.mkdir()
-    for src in (PUSH_ALL_SH, PULL_ALL_SH):
+    for src in (
+        PUSH_ALL_SH,
+        PULL_ALL_SH,
+        MANAGE_HOOKS_PY,
+        HOOK_DEFINITIONS_PY,
+        HOOK_CLAUDE_PY,
+    ):
         if src.exists():
             (scripts_dir / src.name).write_text(src.read_text())
 

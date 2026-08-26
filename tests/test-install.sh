@@ -59,6 +59,17 @@ PY
         git -c user.email=t@t -c user.name=t commit -qm init )
 }
 
+add_hook_skill_fixture() {
+    local src="$1"
+    local s="$src/project-lock"
+    mkdir -p "$s/hooks"
+    printf '%s\n' "---" "name: project-lock" "description: lock" "---" "body" > "$s/SKILL.md"
+    printf '%s\n' "hooks/" > "$s/.skillpack"
+    printf '%s\n' "#!/usr/bin/env python3" "print('lock')" > "$s/hooks/pre_tool_use.py"
+    ( cd "$s" && git init -q && git add SKILL.md .skillpack hooks/pre_tool_use.py && \
+        git -c user.email=t@t -c user.name=t commit -qm init )
+}
+
 # --- run the installer + assert the shipped surface -----------------------
 
 assert_install() {
@@ -121,6 +132,15 @@ case "$fail_out" in
     *FAILED*) pass ".sh: failed apply names the destination it could not write" ;;
     *)        fail ".sh: failed apply printed no FAILED line" ;;
 esac
+
+echo "[.sh] hook registration with --hooks"
+add_hook_skill_fixture "$SRC"
+HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude --hooks project-lock >/dev/null
+assert_exists ".sh: project-lock hook shipped" "$HOME_SH/.claude/skills/project-lock/hooks/pre_tool_use.py"
+assert_exists ".sh: claude settings.json created" "$HOME_SH/.claude/settings.json"
+assert_contains ".sh: pre_tool_use registered in settings.json" "$HOME_SH/.claude/settings.json" "pre_tool_use.py"
+assert_exists ".sh: hook decisions file created" "$HOME_SH/.claude/skills/.hook-decisions.json"
+assert_contains ".sh: hook decision recorded" "$HOME_SH/.claude/skills/.hook-decisions.json" "project-lock/pre_tool_use"
 
 # ===== .bat under test (Windows only) =====
 if command -v cmd.exe >/dev/null 2>&1; then
@@ -315,6 +335,16 @@ if command -v cmd.exe >/dev/null 2>&1; then
     else
         fail ".bat: drifted Hermes check modified destination"
     fi
+
+    echo "[.bat] hook registration with --hooks"
+    add_hook_skill_fixture "$SRC2"
+    USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --claude --hooks project-lock >/dev/null
+    assert_exists ".bat: project-lock hook shipped" "$HOME_BAT/.claude/skills/project-lock/hooks/pre_tool_use.py"
+    assert_exists ".bat: claude settings.json created" "$HOME_BAT/.claude/settings.json"
+    assert_contains ".bat: pre_tool_use registered in settings.json" "$HOME_BAT/.claude/settings.json" "pre_tool_use.py"
+    assert_exists ".bat: hook decisions file created" "$HOME_BAT/.claude/skills/.hook-decisions.json"
+    assert_contains ".bat: hook decision recorded" "$HOME_BAT/.claude/skills/.hook-decisions.json" "project-lock/pre_tool_use"
 else
     echo "[.bat] skipped (no cmd.exe on this platform)"
 fi

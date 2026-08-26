@@ -14,7 +14,7 @@
 # *.pyc, .pytest_cache), which is preserved and never reported as drift
 # (see IGNORE_PATTERNS below).
 #
-# Usage: ./install-skills.sh [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
+# Usage: ./install-skills.sh [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
 #   -y / --yes         overwrite without prompting
 #   -n / --dry-run     show what would change, don't copy
 #   --check            check for drift without prompting or writing (0 clean, 1 drift, 2 argument error)
@@ -26,6 +26,8 @@
 #   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
 #                      install the debuggers it drives (netcoredbg/gdb/lldb/cdb,
 #                      platform-gated, idempotent); honors -n as the script's --dry-run
+#   --hooks            check and offer to register hooks in harness settings
+#   --prune-hooks      prune dangling hook entries pointing to uninstalled skill files
 #   positional args    limit to specific skill names (default: all)
 #
 # With no agent flag, installs only to harness dirs that ALREADY EXIST on this
@@ -40,7 +42,8 @@
 
 set -euo pipefail
 
-SRC_ROOT="${SKILLS_SRC_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_ROOT="${SKILLS_SRC_ROOT:-"$REPO_DIR"}"
 
 git_workdir_path() {
     if command -v cygpath >/dev/null 2>&1; then
@@ -72,6 +75,8 @@ CHECK_MODE=0
 DRIFT_FOUND=0
 DEFAULT_MODE=0
 SETUP_DEBUGGERS=0
+HOOKS_MODE=0
+PRUNE_HOOKS=0
 ABORT=0
 APPLY_FAILED=0
 SELECTED=()
@@ -189,8 +194,10 @@ while [ $# -gt 0 ]; do
         --hermes) add_destination hermes "$(hermes_home)/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         --setup-debuggers) SETUP_DEBUGGERS=1; shift ;;
+        --hooks) HOOKS_MODE=1; shift ;;
+        --prune-hooks) PRUNE_HOOKS=1; shift ;;
         -h|--help)
-            sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -448,8 +455,60 @@ if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$CHECK_MODE" != 1 ] && [ "$ABORT" != 1 ] && 
     fi
 fi
 
+# Optional: hook management for skills declaring hooks (project-lock, progress-beacon,
+# research-first, wrap). Opt-in via --hooks / --prune-hooks.
+if [ "$HOOKS_MODE" = 1 ] || [ "$PRUNE_HOOKS" = 1 ]; then
+    if [ "$ABORT" != 1 ] && [ "$APPLY_FAILED" != 1 ]; then
+        python_bin="$(command -v python3 || command -v python || true)"
+        manage_hooks_script="$REPO_DIR/scripts/manage_hooks.py"
+        if [ ! -f "$manage_hooks_script" ]; then
+            manage_hooks_script="$SRC_ROOT/scripts/manage_hooks.py"
+        fi
+        if [ -z "$python_bin" ]; then
+            echo
+            echo "--hooks: skipped (no python3/python on PATH)" >&2
+        elif [ ! -f "$manage_hooks_script" ]; then
+            echo
+            echo "--hooks: skipped ($manage_hooks_script not found)" >&2
+        else
+            echo
+            hook_args=()
+            [ "$ASSUME_YES" = 1 ] && hook_args+=(-y)
+            [ "$DRY_RUN" = 1 ] && hook_args+=(-n)
+            [ "$CHECK_MODE" = 1 ] && hook_args+=(--check)
+            [ "$PRUNE_HOOKS" = 1 ] && hook_args+=(--prune)
+
+            for destination in "${DESTINATIONS[@]}"; do
+                agent="${destination%%|*}"
+                case "$agent" in
+                    claude) hook_args+=(--claude) ;;
+                    gemini) hook_args+=(--gemini) ;;
+                    hermes) hook_args+=(--hermes) ;;
+                    agents) hook_args+=(--agents) ;;
+                esac
+            done
+
+            for sel in "${SELECTED[@]+"${SELECTED[@]}"}"; do
+                hook_args+=("$sel")
+            done
+
+            if ! "$python_bin" "$manage_hooks_script" "${hook_args[@]+"${hook_args[@]}"}"; then
+                if [ "$CHECK_MODE" = 1 ]; then
+                    DRIFT_FOUND=1
+                else
+                    APPLY_FAILED=1
+                fi
+            fi
+        fi
+    fi
+fi
+
 if [ "$APPLY_FAILED" = 1 ]; then
     echo
     echo "one or more skills failed to install; see the errors above." >&2
+    exit 1
+fi
+
+if [ "$CHECK_MODE" = 1 ] && [ "$DRIFT_FOUND" = 1 ]; then
     exit 1
 fi

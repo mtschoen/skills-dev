@@ -60,6 +60,19 @@ Each skill repo has `SKILL.md` at its root. The installer ships only **git-track
 
 The installer copies skill **files** only - it does not install any external runtime tooling a skill needs. Some skills have such prerequisites (e.g. `using-a-debugger` needs a debugger binary like netcoredbg/gdb/lldb/cdb plus Python 3; `cost-estimator` needs its data sources). Each such skill documents its prerequisites in its own `references/` (for `using-a-debugger`, see `references/tooling-setup.md`) and README - check there after installing.
 
+### Hook registration (`--hooks`)
+
+Four skills in this umbrella ship runtime hooks (`project-lock`, `progress-beacon`, `research-first`, `wrap`). Passing `--hooks` (or `--prune-hooks`) checks registration state across harness settings, offers to register unconfigured hooks, and records your yes / no / later decisions so you are asked at most once:
+
+```bash
+./install-skills.sh --hooks               # interactively offer hooks for installed skills
+./install-skills.sh -y --claude --hooks   # non-interactive install + hook registration
+./install-skills.sh --check --hooks       # check for unregistered hooks (drift check)
+./install-skills.sh --prune-hooks         # prune dangling hooks pointing to missing skill files
+```
+
+Claude Code hooks are wired into `~/.claude/settings.json` (with automatic backup). For `project-lock`, the offer flow supports enforcement modes (`warn` recommended for initial setup, or `deny`). Decisions are recorded in `.hook-decisions.json` alongside installed skills. Harnesses without command hook contracts (Antigravity, Hermes) are reported as uncovered.
+
 ## Working across all submodules
 
 `scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo. push-all pushes `origin` by default; pull-all fetches + fast-forwards from `origin` only. Either accepts `--remote <name>` to add another remote where it exists. Each push is pre-flighted (fetch + classify local vs remote as up-to-date / fast-forward / behind / diverged), and non-fast-forward states are reported and skipped. Errors print inline and don't halt the run, but the script exits non-zero with a summary.

@@ -36,8 +36,9 @@ rem dir. Pass explicit --agents/--claude/--gemini/--hermes/--all to create a mis
 rem
 rem Test seam: set SKILLS_SRC_ROOT to override the source dir scanned.
 
-set "SRC_ROOT=%~dp0"
-if "%SRC_ROOT:~-1%"=="\" set "SRC_ROOT=%SRC_ROOT:~0,-1%"
+set "REPO_ROOT=%~dp0"
+if "%REPO_ROOT:~-1%"=="\" set "REPO_ROOT=%REPO_ROOT:~0,-1%"
+set "SRC_ROOT=%REPO_ROOT%"
 if defined SKILLS_SRC_ROOT set "SRC_ROOT=%SKILLS_SRC_ROOT%"
 
 set "ASSUME_YES=0"
@@ -46,6 +47,8 @@ set "CHECK_MODE=0"
 set "DRIFT_FOUND=0"
 set "DEFAULT_MODE=0"
 set "SETUP_DEBUGGERS=0"
+set "HOOKS_MODE=0"
+set "PRUNE_HOOKS=0"
 set "SELECTED="
 set "DEST_COUNT=0"
 set "ABORT=0"
@@ -74,6 +77,8 @@ if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\config\s
 if /i "%~1"=="--hermes"   (call :set_hermes_home & call :add_dest hermes "!HERMES_SKILLS!" & shift & goto parse_args)
 if /i "%~1"=="--all"      (call :add_all_dests & shift & goto parse_args)
 if /i "%~1"=="--setup-debuggers" (set "SETUP_DEBUGGERS=1" & shift & goto parse_args)
+if /i "%~1"=="--hooks"        (set "HOOKS_MODE=1" & shift & goto parse_args)
+if /i "%~1"=="--prune-hooks"  (set "PRUNE_HOOKS=1" & shift & goto parse_args)
 if /i "%~1"=="-h"         goto usage
 if /i "%~1"=="--help"     goto usage
 set "arg=%~1"
@@ -123,6 +128,8 @@ if "!ABORT!"=="1" (
 )
 
 if "!SETUP_DEBUGGERS!"=="1" if "!CHECK_MODE!"=="0" if not "!ABORT!"=="1" if not "!FATAL!"=="1" if not "!APPLY_FAILED!"=="1" call :setup_debuggers
+if "!HOOKS_MODE!"=="1" if not "!ABORT!"=="1" if not "!FATAL!"=="1" if not "!APPLY_FAILED!"=="1" call :manage_hooks
+if "!PRUNE_HOOKS!"=="1" if not "!ABORT!"=="1" if not "!FATAL!"=="1" if not "!APPLY_FAILED!"=="1" call :manage_hooks
 
 if "!FATAL!"=="1" (
     endlocal
@@ -172,6 +179,45 @@ if "!DRY_RUN!"=="1" (
     "!PYBIN!" "!setup_script!" --dry-run
 ) else (
     "!PYBIN!" "!setup_script!"
+)
+exit /b 0
+
+:manage_hooks
+set "hooks_script=%REPO_ROOT%\scripts\manage_hooks.py"
+if not exist "!hooks_script!" set "hooks_script=%SRC_ROOT%\scripts\manage_hooks.py"
+if not exist "!hooks_script!" (
+    echo.
+    echo --hooks: skipped ^(!hooks_script! not found^) 1>&2
+    exit /b 0
+)
+set "PYBIN="
+where python >nul 2>nul && set "PYBIN=python"
+if not defined PYBIN ( where py >nul 2>nul && set "PYBIN=py" )
+if not defined PYBIN (
+    echo.
+    echo --hooks: skipped ^(no python/py on PATH^) 1>&2
+    exit /b 0
+)
+echo.
+set "HOOK_ARGS="
+if "!ASSUME_YES!"=="1" set "HOOK_ARGS=!HOOK_ARGS! -y"
+if "!DRY_RUN!"=="1" set "HOOK_ARGS=!HOOK_ARGS! -n"
+if "!CHECK_MODE!"=="1" set "HOOK_ARGS=!HOOK_ARGS! --check"
+if "!PRUNE_HOOKS!"=="1" set "HOOK_ARGS=!HOOK_ARGS! --prune"
+for /l %%I in (1,1,%DEST_COUNT%) do (
+    if /i "!DEST_%%I_NAME!"=="claude" set "HOOK_ARGS=!HOOK_ARGS! --claude"
+    if /i "!DEST_%%I_NAME!"=="gemini" set "HOOK_ARGS=!HOOK_ARGS! --gemini"
+    if /i "!DEST_%%I_NAME!"=="hermes" set "HOOK_ARGS=!HOOK_ARGS! --hermes"
+    if /i "!DEST_%%I_NAME!"=="agents" set "HOOK_ARGS=!HOOK_ARGS! --agents"
+)
+if defined SELECTED set "HOOK_ARGS=!HOOK_ARGS! !SELECTED!"
+"!PYBIN!" "!hooks_script!" !HOOK_ARGS!
+if errorlevel 1 (
+    if "!CHECK_MODE!"=="1" (
+        set "DRIFT_FOUND=1"
+    ) else (
+        set "APPLY_FAILED=1"
+    )
 )
 exit /b 0
 
@@ -443,7 +489,7 @@ exit /b 1
 :usage
 echo Install skills from this repo into one or more agent config dirs.
 echo.
-echo Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
+echo Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
 echo   -y / --yes         overwrite without prompting
 echo   -n / --dry-run     show what would change, don't copy
 echo   --check            check for drift without prompting or writing ^(0 clean, 1 drift, 2 argument error^)
@@ -453,5 +499,7 @@ echo   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
 echo   --hermes           install to Hermes home ^(HERMES_HOME, LOCALAPPDATA\hermes, or USERPROFILE\.hermes^)
 echo   --all              install to all known agent skill dirs
 echo   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py
+echo   --hooks            check and offer to register hooks in harness settings
+echo   --prune-hooks      prune dangling hook entries pointing to uninstalled skill files
 echo   positional args    limit to specific skill names ^(default: all^)
 exit /b 0

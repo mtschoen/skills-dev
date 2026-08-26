@@ -10,6 +10,7 @@ repo and stages the files - the installer enumerates shippable content via
 `git ls-files`, so a bare `.git` marker would stage nothing.
 """
 
+import json
 import os
 import shutil
 import stat
@@ -797,3 +798,77 @@ class TestUpdatePreview:
         assert "keep.md" not in out
         # The TEMP staging dir must never leak into the preview.
         assert "skillinst" not in out
+
+
+class TestHooksOption:
+    """--hooks flag triggers hook check/registration via manage_hooks.py."""
+
+    def test_help_lists_hooks_flags(self, tmp_repo):
+        result = run_install_script(tmp_repo, "--help")
+        assert result.returncode == 0
+        assert "--hooks" in result.stdout
+        assert "--prune-hooks" in result.stdout
+
+    def test_install_with_hooks_registers_in_claude_settings(self, tmp_repo, tmp_path):
+        make_skill(
+            tmp_repo,
+            "project-lock",
+            files={
+                "SKILL.md": "# project-lock\n",
+                ".skillpack": "hooks/\n",
+                "hooks/pre_tool_use.py": "#!/usr/bin/env python3\nprint('lock')\n",
+            },
+        )
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(
+            tmp_repo, "-y", "--claude", "--hooks", "project-lock", env_override=env
+        )
+        assert result.returncode == 0
+        assert "checking hooks" in result.stdout
+
+        dest = tmp_path / ".claude" / "skills" / "project-lock"
+        assert (dest / "hooks" / "pre_tool_use.py").exists()
+
+        settings_file = tmp_path / ".claude" / "settings.json"
+        assert settings_file.exists()
+        settings_data = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert "PreToolUse" in settings_data.get("hooks", {})
+        assert settings_data.get("env", {}).get("PROJECT_LOCK_ENFORCE") == "warn"
+
+        decisions_file = tmp_path / ".claude" / "skills" / ".hook-decisions.json"
+        assert decisions_file.exists()
+        decisions = json.loads(decisions_file.read_text(encoding="utf-8"))
+        assert (
+            decisions.get("decisions", {})
+            .get("project-lock/pre_tool_use", {})
+            .get("decision")
+            == "yes"
+        )
+
+    def test_hooks_check_mode_detects_unregistered(self, tmp_repo, tmp_path):
+        make_skill(
+            tmp_repo,
+            "research-first",
+            files={
+                "SKILL.md": "# research-first\n",
+                ".skillpack": "hooks/\n",
+                "hooks/prompt-reminder.sh": "#!/usr/bin/env bash\necho rf\n",
+            },
+        )
+        env = home_with(tmp_path, ".claude")
+        # Install without hooks first
+        run_install_script(
+            tmp_repo, "-y", "--claude", "research-first", env_override=env
+        )
+
+        # Check with hooks mode -> should report drift (exit 1)
+        check_result = run_install_script(
+            tmp_repo,
+            "--check",
+            "--claude",
+            "--hooks",
+            "research-first",
+            env_override=env,
+        )
+        assert check_result.returncode == 1
+        assert "unregistered" in check_result.stdout
