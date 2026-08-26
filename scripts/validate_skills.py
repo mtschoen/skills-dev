@@ -1,33 +1,37 @@
 #!/usr/bin/env python3
 """Validate every skill's SKILL.md using the official Agent Skills validator.
 
-Each top-level submodule in this repo is a skill with a SKILL.md at its root
-(root layout). Per-skill validation is delegated to `agentskills validate`
-(the console script from the pinned `skills-ref` PyPI package), which strict-
-parses the YAML frontmatter and enforces the spec's naming/field rules.
+Each shipped skill is declared in `.gitmodules` as a submodule path. A skill is:
 
-This module keeps only the *fleet* logic the per-skill validator can't know:
+  - the submodule directory if it contains `SKILL.md`, or
+  - a one-level child directory under that submodule that contains `SKILL.md`.
 
-  - the set of skills comes from `.gitmodules`, not from disk, so a broken
-    recursive checkout can't pass vacuously;
-  - empty/missing dir        -> ERROR (broken checkout);
-  - content but no SKILL.md  -> SKIPPED (a WIP submodule, not a skill yet);
-  - has a SKILL.md           -> handed to `agentskills validate`;
-  - no tracked file (in the umbrella or any skill, dev files included)
-    may reference local-only paths (user memory notes, machine-specific
-    home directories) that do not travel with the repo.
+This supports the family-submodule layout without adding unbounded recursion.
 
-Exit codes: 0 = all valid, 1 = validation errors, 2 = nothing validated.
+Per-skill validation is delegated to `agentskills validate`, the console script
+from the pinned `skills-ref` PyPI package, which strict-parses the YAML
+frontmatter and enforces the spec's naming and field rules.
 
-Run from anywhere:  python scripts/validate_skills.py
+This module keeps only the *fleet* logic the per-skill validator cannot know:
+
+  - `.gitmodules` remains the source of truth for submodule-backed skills so a
+    broken recursive checkout cannot pass vacuously;
+  - empty/missing module dir -> ERROR (broken checkout);
+  - submodule with content but no SKILL.md -> SKIPPED for WIP tracking;
+  - has a SKILL.md -> handed to `agentskills validate`;
+  - no tracked file (umbrella or skill dirs) may reference local-only paths that
+    do not travel with the repo;
+  - explicit extra roots can be scanned for relocated skills.
 """
 
+import argparse
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+_DEFAULT_ENCODING = "utf-8"
 _PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
 _FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---", re.DOTALL)
 # The description scalar plus any indented continuation lines.
@@ -50,13 +54,11 @@ _PORTABILITY_RULES = (
 
 _PORTABILITY_EXEMPTIONS = {}
 
-# These define and test the deny patterns, so they contain them literally.
 _PORTABILITY_FILE_EXEMPTIONS = {
     "scripts/validate_skills.py",
     "tests/test_validate_skills.py",
 }
 
-# Fallback-walk skip list for directories git would not track anyway.
 _SCAN_SKIP_DIRECTORIES = {
     ".git",
     "__pycache__",
@@ -65,6 +67,8 @@ _SCAN_SKIP_DIRECTORIES = {
     "workspace",
     "smoke-test-workspace",
 }
+
+_EXTRA_SKILL_ROOT_GLOBS = ("packages/*/skills/*", "satellites/*/skills/*")
 
 
 def tracked_files(directory: Path):
@@ -88,35 +92,42 @@ def tracked_files(directory: Path):
             yield candidate
 
 
-def check_portability(repo_root: Path, path: str):
+def check_portability(skill_root: Path, path: str):
     """Return error strings for local-only path references in tracked files."""
+    skill_dir = skill_root
+    report_prefix = path
+    if path and not (skill_root / "SKILL.md").is_file():
+        candidate = skill_root / path
+        if candidate.is_dir() and (candidate / "SKILL.md").is_file():
+            skill_dir = candidate
+        else:
+            report_prefix = ""
+    else:
+        report_prefix = "" if path in ("", ".", "./") else path
+
     exempt_labels = _PORTABILITY_EXEMPTIONS.get(path, set())
     errors = []
-    for tracked in tracked_files(repo_root / path):
-        relative = tracked.relative_to(repo_root).as_posix()
+    for tracked in tracked_files(skill_dir):
+        relative = tracked.relative_to(skill_dir).as_posix()
         if relative in _PORTABILITY_FILE_EXEMPTIONS:
             continue
-        text = tracked.read_text(encoding="utf-8", errors="replace")
-        for line_number, line in enumerate(text.splitlines(), start=1):
+        text = tracked.read_text(encoding=_DEFAULT_ENCODING, errors="replace")
+        for _line_number, line in enumerate(text.splitlines(), start=1):
             for label, pattern in _PORTABILITY_RULES:
                 if label not in exempt_labels and pattern.search(line):
+                    prefix = "" if report_prefix in ("", ".") else f"{report_prefix}/"
                     errors.append(
-                        f"{relative}:{line_number}: references a {label} "
+                        f"{prefix}{relative}:{_line_number}: references a {label} "
                         "that does not travel with the repo"
                     )
     return errors
 
 
 def check_description_brackets(path: str, skill_md: Path):
-    """Flag angle brackets in the frontmatter description (Claude Code rule).
-
-    Claude Code injects name + description into the model's system-prompt
-    skill listing, where `<`/`>` behave like markup, so it rejects them in
-    the description field. The agentskills.io spec permits them, hence this
-    stricter check on top of `agentskills validate`. The SKILL.md *body* may
-    use angle brackets freely.
-    """
-    match = _FRONTMATTER.match(skill_md.read_text(encoding="utf-8", errors="replace"))
+    """Flag angle brackets in the frontmatter description (Claude Code rule)."""
+    match = _FRONTMATTER.match(
+        skill_md.read_text(encoding=_DEFAULT_ENCODING, errors="replace")
+    )
     if match is None:
         return []  # malformed frontmatter is skills-ref's finding, not ours
     described = _DESCRIPTION.search(match.group(1))
@@ -138,6 +149,48 @@ def parse_submodule_paths(gitmodules_text):
     return _PATH_LINE.findall(gitmodules_text)
 
 
+def discover_gitmodule_skills(repo_root: Path, module_paths):
+    """Return skill paths and skip/error side lists from .gitmodules entries."""
+    skill_paths = []
+    skipped = []
+    errors = []
+    for path in module_paths:
+        module_dir = repo_root / path
+        if not module_dir.is_dir():
+            errors.append(
+                f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"
+            )
+            continue
+        if (module_dir / "SKILL.md").is_file():
+            skill_paths.append(path)
+            continue
+        discovered = []
+        for child in sorted(module_dir.iterdir()):
+            if child.is_dir() and not child.name.startswith("."):
+                discovered.append(f"{path}/{child.name}")
+        if discovered:
+            skill_paths.extend(discovered)
+        elif has_content(module_dir):
+            skipped.append(path)
+        else:
+            errors.append(
+                f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"
+            )
+    return skill_paths, skipped, errors
+
+
+def discover_extra_skill_directories(root: Path):
+    """Yield `(label, directory)` for skill directories in extra roots."""
+    for pattern in _EXTRA_SKILL_ROOT_GLOBS:
+        for candidate in sorted(root.glob(pattern)):
+            if candidate.is_dir() and candidate.name != ".git":
+                try:
+                    label = candidate.relative_to(root).as_posix()
+                except ValueError:
+                    label = candidate.as_posix()
+                yield label, candidate
+
+
 def find_skill_md(skill_dir: Path):
     """Return the root SKILL.md for a skill dir, or None if absent."""
     candidate = skill_dir / "SKILL.md"
@@ -152,11 +205,7 @@ def has_content(skill_dir: Path):
 
 
 def run_agentskills(skill_dir: Path):
-    """Validate one skill dir with `agentskills validate`. Returns (exit_code, output).
-
-    Raises RuntimeError if the `agentskills` console script isn't on PATH - a
-    missing validator must fail loudly, never silently pass.
-    """
+    """Validate one skill dir with `agentskills validate`. Returns (exit_code, output)."""
     executable = shutil.which("agentskills")
     if executable is None:
         raise RuntimeError(
@@ -175,22 +224,15 @@ import xml.etree.ElementTree as ET
 
 
 def check_frontmatter_xml_wellformedness(skill_dir: Path, path: str):
-    """Verify that SKILL.md frontmatter does not break XML parser when injected into prompt wrappers.
-
-    Wraps the frontmatter in a simulated system-prompt XML container (`<skill><description>...</description></skill>`)
-    and parses it using Python's builtin `xml.etree.ElementTree`. Any unescaped `<`, `>`, `&`, or invalid XML
-    syntax will fail parsing and return a clear line-specific error.
-    """
+    """Verify that SKILL.md frontmatter is XML-compatible for prompt wrappers."""
     skill_md = find_skill_md(skill_dir)
     if skill_md is None:
         return []
-    text = skill_md.read_text(encoding="utf-8", errors="replace")
+    text = skill_md.read_text(encoding=_DEFAULT_ENCODING, errors="replace")
     parts = text.split("---", 2)
     if len(parts) < 3:
         return []
     frontmatter = parts[1]
-
-    # Wrap in a standard XML document structure to test well-formedness
     xml_doc = f"<skill>\n{frontmatter}\n</skill>"
     try:
         ET.fromstring(xml_doc)
@@ -202,17 +244,19 @@ def check_frontmatter_xml_wellformedness(skill_dir: Path, path: str):
         ]
 
 
-def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
-    """Validate one skill. Returns a list of error strings ([] if clean or skipped).
-
-    `runner(skill_dir) -> (exit_code, output)` is injected so the fleet logic is
-    unit-testable without the real validator installed.
-    """
-    skill_dir = repo_root / path
+def validate_skill(skill_dir: Path, path: str, runner=run_agentskills):
+    """Validate one skill. Returns a list of error strings ([] if clean or skipped)."""
+    candidate = skill_dir / path
+    if candidate.is_dir():
+        skill_dir = candidate
+        if path == "." or path == "":
+            path = skill_dir.name
+    if not skill_dir.is_dir():
+        return [f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"]
     skill_md = find_skill_md(skill_dir)
     if skill_md is None:
         if has_content(skill_dir):
-            return []  # WIP submodule, not an authored skill yet - skip, not an error
+            return []  # WIP submodule path - skip, not an error
         return [f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"]
 
     errors = []
@@ -225,37 +269,59 @@ def validate_skill(repo_root: Path, path: str, runner=run_agentskills):
             errors.append(f"{path}: skills-ref reported invalid (exit {code})")
     errors.extend(check_frontmatter_xml_wellformedness(skill_dir, path))
     errors.extend(check_description_brackets(path, skill_md))
-    errors.extend(check_portability(repo_root, path))
+    errors.extend(check_portability(skill_dir, path))
     return errors
 
 
 def validate_repo(repo_root: Path, runner=run_agentskills):
-    """Validate every skill declared in .gitmodules.
+    """Validate every skill declared in `.gitmodules`."""
+    return validate_repo_with_options(repo_root=repo_root, runner=runner)
 
-    Returns (errors, validated_count, skipped) where validated_count is the
-    number of submodules that had a SKILL.md, and skipped lists WIP submodules.
-    """
+
+def validate_repo_with_options(
+    repo_root: Path, runner=run_agentskills, extra_skill_roots=None
+):
+    """Validate `.gitmodules` skills and optionally explicit extra-scan root skills."""
     gitmodules = repo_root / ".gitmodules"
     if not gitmodules.is_file():
         return ([f"{repo_root}: no .gitmodules file found"], 0, [])
 
-    paths = parse_submodule_paths(gitmodules.read_text(encoding="utf-8"))
-    errors = list(check_portability(repo_root, "."))
+    module_paths = parse_submodule_paths(
+        gitmodules.read_text(encoding=_DEFAULT_ENCODING)
+    )
+    skills, skipped, errors = discover_gitmodule_skills(repo_root, module_paths)
+    errors.extend(check_portability(repo_root, "."))
+
     validated = 0
-    skipped = []
-    for path in paths:
-        skill_errors = validate_skill(repo_root, path, runner=runner)
-        if find_skill_md(repo_root / path) is not None:
+    for path in skills:
+        skill_dir = repo_root / path
+        skill_errors = validate_skill(skill_dir, path, runner=runner)
+        if find_skill_md(skill_dir) is not None:
             validated += 1
-        elif not skill_errors:
+        else:
             skipped.append(path)
         errors.extend(skill_errors)
+
+    seen = {str((repo_root / path).resolve()) for path in skills}
+    for extra_root in extra_skill_roots or []:
+        root_path = Path(extra_root)
+        for label, candidate in discover_extra_skill_directories(root_path):
+            resolved = str(candidate.resolve())
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            skill_errors = validate_skill(candidate, label, runner=runner)
+            errors.extend(skill_errors)
+            if not skill_errors:
+                validated += 1
     return (errors, validated, skipped)
 
 
-def evaluate(repo_root: Path, runner=run_agentskills):
+def evaluate(repo_root: Path, runner=run_agentskills, extra_skill_roots=None):
     """Run validation and return (exit_code, output_lines)."""
-    errors, validated, skipped = validate_repo(repo_root, runner=runner)
+    errors, validated, skipped = validate_repo_with_options(
+        repo_root, runner=runner, extra_skill_roots=extra_skill_roots
+    )
     notices = [
         f"note: skipped {name} (submodule has no SKILL.md yet)" for name in skipped
     ]
@@ -281,8 +347,23 @@ def evaluate(repo_root: Path, runner=run_agentskills):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Validate skill metadata and tracked file portability."
+    )
+    parser.add_argument(
+        "--extra-skill-root",
+        action="append",
+        default=[],
+        help=(
+            "scan an additional repo root for relocated skills under "
+            "`packages/*/skills/*` and `satellites/*/skills/*`"
+        ),
+    )
+    args, _ = parser.parse_known_args()
     repo_root = Path(__file__).resolve().parent.parent
-    code, lines = evaluate(repo_root)
+    code, lines = evaluate(
+        repo_root, runner=run_agentskills, extra_skill_roots=args.extra_skill_root
+    )
     print("\n".join(lines))
     sys.exit(code)
 

@@ -103,21 +103,19 @@ if "!DEFAULT_MODE!"=="1" if "!DEST_COUNT!"=="0" (
 
 set "BASELINE= SKILL.md scripts references assets "
 
+set "SKILL_COUNT=0"
 set "FOUND=0"
-for /d %%D in ("%SRC_ROOT%\*") do (
-    if not "!ABORT!"=="1" if not "!FATAL!"=="1" (
-        set "name=%%~nxD"
-        set "src=%%~fD"
-        if exist "!src!\.git" (
-            set /a FOUND+=1
-            call :maybe_install "!name!" "!src!"
-        )
-    )
+set "USING_A_DEBUGGER_SOURCE="
+call :discover_skills
+for /l %%I in (1,1,!SKILL_COUNT!) do (
+    if "!ABORT!"=="1" if not "!FATAL!"=="1" exit /b 0
+    call :maybe_install "!SKILL_NAME_%%I!" "!SKILL_PATH_%%I!"
+    set /a FOUND+=1
 )
 
 if "!FOUND!"=="0" (
-    echo warning: no skill submodules found under %SRC_ROOT%. 1>&2
-    echo          did you forget to run 'git submodule update --init --recursive'? 1>&2
+    echo warning: no installable skills found under %SRC_ROOT%. 1>&2
+    echo          are you sure SKILL.md files are present under this tree? 1>&2
     endlocal
     exit /b 1
 )
@@ -153,7 +151,11 @@ exit /b 0
 rem Install the debuggers using-a-debugger drives. Deps are machine-global, so
 rem this runs once from the source tree regardless of destination count. Opt-in
 rem via --setup-debuggers so a routine skill copy never triggers an install.
-set "setup_script=%SRC_ROOT%\using-a-debugger\scripts\setup-debuggers.py"
+if not defined USING_A_DEBUGGER_SOURCE (
+    set "setup_script="
+) else (
+    set "setup_script=!USING_A_DEBUGGER_SOURCE!\scripts\setup-debuggers.py"
+)
 call :is_selected using-a-debugger
 if errorlevel 1 (
     echo.
@@ -219,6 +221,38 @@ if errorlevel 1 (
         set "APPLY_FAILED=1"
     )
 )
+exit /b 0
+
+:discover_skills
+rem Discover one-level and one-level-deep skill directories that contain SKILL.md.
+set "SKILL_COUNT=0"
+for /d %%D in ("%SRC_ROOT%\*") do (
+    set "top_name=%%~nxD"
+    set "top_src=%%~fD"
+    if not "!ABORT!"=="1" if not "!FATAL!"=="1" (
+        if exist "!top_src!\SKILL.md" (
+            call :add_discovered_skill "!top_name!" "!top_src!"
+        ) else (
+            for /d %%C in ("%%~fD\*") do (
+                if not "!ABORT!"=="1" if not "!FATAL!"=="1" (
+                    if exist "%%~fC\SKILL.md" (
+                        call :add_discovered_skill "%%~nxC" "%%~fC"
+                    )
+                )
+            )
+        )
+    )
+)
+exit /b 0
+
+:add_discovered_skill
+for /l %%I in (1,1,!SKILL_COUNT!) do (
+    if /i "!SKILL_NAME_%%I!"=="%~1" exit /b 0
+)
+set /a SKILL_COUNT+=1
+set "SKILL_NAME_!SKILL_COUNT!=%~1"
+set "SKILL_PATH_!SKILL_COUNT!=%~2"
+if /i "%~1"=="using-a-debugger" set "USING_A_DEBUGGER_SOURCE=%~2"
 exit /b 0
 
 :add_dest

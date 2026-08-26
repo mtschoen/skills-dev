@@ -250,9 +250,14 @@ build_staging() {
     git_src="$(git_workdir_path "$src")"
     tracked="$(mktemp "${TMPDIR:-/tmp}/skillfiles.XXXXXX")"
     if ! git -C "$git_src" ls-files > "$tracked"; then
-        echo "could not enumerate tracked files for $(basename "$src")" >&2
+        if [ -e "$src/.git" ]; then
+            echo "could not enumerate tracked files for $(basename "$src")" >&2
+            rm -f "$tracked"
+            return 1
+        fi
+        echo "skip $(basename "$src") (not a git worktree)"
         rm -f "$tracked"
-        return 1
+        return 2
     fi
     while IFS= read -r f; do
         top="${f%%/*}"
@@ -266,6 +271,9 @@ build_staging() {
         cp -p "$src/$f" "$staging/$f"
     done < "$tracked"
     rm -f "$tracked"
+    if [ -z "$(ls -A "$staging")" ]; then
+        return 2
+    fi
 }
 
 confirm() {
@@ -322,8 +330,7 @@ format_diff() {
 }
 
 install_skill_to_destination() {
-    local name="$1" agent="$2" dest_root="$3"
-    local src="$SRC_ROOT/$name"
+    local name="$1" src="$2" agent="$3" dest_root="$4"
     if [ ! -f "$src/SKILL.md" ]; then
         echo "skip $name (no SKILL.md)"
         return
@@ -332,9 +339,21 @@ install_skill_to_destination() {
     local dest="$dest_root/$name"
     local staging
     staging="$(mktemp -d "${TMPDIR:-/tmp}/skillinst.XXXXXX")"
-    if ! build_staging "$src" "$staging"; then
+    local build_status
+    if build_staging "$src" "$staging"; then
+        build_status=0
+    else
+        build_status=$?
+    fi
+    if [ "$build_status" -ne 0 ]; then
         rm -rf "$staging"
+        [ "$build_status" -eq 2 ] && return
         return 1
+    fi
+    if [ ! -e "$staging" ] || [ -z "$(ls -A "$staging")" ]; then
+        rm -rf "$staging"
+        echo "skip $name (no tracked files)"
+        return
     fi
 
     if [ ! -e "$dest" ]; then
@@ -394,28 +413,62 @@ install_skill_to_destination() {
 }
 
 install_skill() {
-    local name="$1" destination agent dest_root
+    local name="$1" src="$2" destination agent dest_root
     for destination in "${DESTINATIONS[@]}"; do
         [ "$ABORT" = 1 ] && break
         agent="${destination%%|*}"
         dest_root="${destination#*|}"
-        install_skill_to_destination "$name" "$agent" "$dest_root" || return 1
+        install_skill_to_destination "$name" "$src" "$agent" "$dest_root" || return 1
+    done
+}
+
+add_discovered_skill() {
+    local name="$1" src="$2"
+    local existing
+    for existing in "${SKILL_NAMES[@]+"${SKILL_NAMES[@]}"}"; do
+        [ "$existing" = "$name" ] && return 0
+    done
+    SKILL_NAMES+=("$name")
+    SKILL_PATHS+=("$src")
+    if [ "$name" = "using-a-debugger" ]; then
+        USING_A_DEBUGGER_SRC="$src"
+    fi
+}
+
+discover_skills() {
+    local top child
+    SKILL_NAMES=()
+    SKILL_PATHS=()
+    USING_A_DEBUGGER_SRC=""
+    for top in "$SRC_ROOT"/*/; do
+        [ -d "$top" ] || continue
+        if [ -f "$top/SKILL.md" ]; then
+            add_discovered_skill "$(basename "$top")" "$top"
+        else
+            for child in "$top"/*/; do
+                [ -d "$child" ] || continue
+                if [ -f "$child/SKILL.md" ]; then
+                    add_discovered_skill "$(basename "$child")" "$child"
+                fi
+            done
+        fi
     done
 }
 
 found=0
-for src in "$SRC_ROOT"/*/; do
+discover_skills
+for index in "${!SKILL_NAMES[@]}"; do
     [ "$ABORT" = 1 ] && break
-    name="$(basename "$src")"
-    [ -e "$src/.git" ] || continue       # only git submodules / repos
+    name="${SKILL_NAMES[$index]}"
+    src="${SKILL_PATHS[$index]}"
     found=$((found + 1))
     is_selected "$name" || continue
-    install_skill "$name" || APPLY_FAILED=1
+    install_skill "$name" "$src" || APPLY_FAILED=1
 done
 
 if [ "$found" = 0 ]; then
-    echo "warning: no skill submodules found under $SRC_ROOT." >&2
-    echo "         did you forget to run 'git submodule update --init --recursive'?" >&2
+    echo "warning: no installable skills found under $SRC_ROOT." >&2
+    echo "         are you sure SKILL.md files are present under this tree?" >&2
     exit 1
 fi
 
@@ -433,7 +486,7 @@ fi
 # regardless of how many destinations were written. Opt-in via --setup-debuggers so
 # a routine skill copy never triggers a system-package install.
 if [ "$SETUP_DEBUGGERS" = 1 ] && [ "$CHECK_MODE" != 1 ] && [ "$ABORT" != 1 ] && [ "$APPLY_FAILED" != 1 ]; then
-    setup_script="$SRC_ROOT/using-a-debugger/scripts/setup-debuggers.py"
+    setup_script="${USING_A_DEBUGGER_SRC:+$USING_A_DEBUGGER_SRC/scripts/setup-debuggers.py}"
     if ! is_selected using-a-debugger; then
         echo
         echo "--setup-debuggers: skipped (using-a-debugger not in the selected skills)"

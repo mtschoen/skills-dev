@@ -1,258 +1,318 @@
-# Design Spec: Reconsidering One-Repo-Per-Skill (Monorepo vs. Families vs. Status Quo)
+# Design Spec: Skill Repository Architecture (Families, not One-Repo-Per-Skill)
 
-Status: Proposed Design Evaluation
-Issue: Closes schoen/skills-dev#25
-Date: 2026-08-19
+Status: Accepted
+Issue: schoen/skills-dev#25
+Date: 2026-08-19, revised 2026-08-26
 
-## Executive Summary & Core Recommendation
+## Executive Summary
 
-When the skills ecosystem started with 5 skills, one git repository per skill provided clear separation and independent experimentation. At 25 skills, this architecture imposes a substantial configuration and maintenance tax that scales linearly with every added skill without providing corresponding value in practice.
+One repository per skill was the right shape at 5 skills. At 26 it imposes a
+configuration and maintenance tax that scales linearly with every skill added
+and buys nothing back in practice.
 
-A comprehensive audit conducted on 2026-08-19 surfaced significant silent drift:
-- 5 skills with cross-forge divergence (merged PRs on GitHub missing from Gitea)
-- 4 skills with broken remote configurations (missing GitHub push URLs)
-- 11 repositories missing branch protections
-- 22 stale local main branches detached from recorded pointers
-- High friction on cross-cutting changes (e.g. the coordinated `fix/hook-offer-pointer` refactor required fanning out across 25 independent repos and PRs)
+The fix is **three themed submodules**, each a coherent, independently
+adoptable set, with `skills-dev` retained as the umbrella index and installer.
+Skills that cannot function without a specific tool move out of the public set
+entirely and ship with that tool.
 
-### The Verdict: Monorepo Wins Decisively
+This supersedes an earlier revision of this document, which recommended
+collapsing every skill into a single flat monorepo. That analysis weighed only
+maintenance surface. It did not weigh distribution, which is the axis this
+decision actually turns on. See "Why not a single flat repo".
 
-This design pass evaluates three architectural alternatives:
-1. **Option A: Status Quo + Automated Scans** (Retain 25+ submodules; add scheduled drift detection)
-2. **Option B: Skill Families** (Group skills into ~5 thematic repositories with submodules)
-3. **Option C: Unified Monorepo** (Consolidate all skills directly into `skills-dev`; eliminate submodules entirely)
+## The Evidence: one-repo-per-skill does not scale
 
-**Recommendation: Migrate to a Unified Monorepo (Option C).**
+An audit on 2026-08-19, re-verified 2026-08-26, found:
 
-Skill Families (Option B) reduce the number of submodules by ~80%, but they retain 100% of the structural pain points: submodule synchronization traps, detached HEAD checkouts, dual-forge repository provisioning, multi-repo PR coordination, and relative submodule path fragility. Furthermore, family boundaries are inherently fuzzy and subject to ongoing taxonomy debates.
+- 26 skill repositories, each with its own CI workflow, branch protection
+  policy, markdownlint config, and pair of forge remotes (52 endpoints).
+- 24 of 26 still carry push URLs pointing at a retired hostname rather than
+  the canonical forge host. They resolve today by accident of DNS, not by
+  design.
+- Two repositories (`fleet-orchestration`, `promote-project`) had genuinely
+  diverged between forges: the same doc fix was performed twice, independently,
+  on two machines, because coordinating one change across the fleet is painful
+  enough that duplication is cheaper than synchronization. One of the two
+  duplicates was also factually wrong, describing a helper as doing the
+  opposite of what it does.
+- Five local-only WIP branches (the umbrella plus four submodules) with no copy
+  on any forge, all belonging to a single cross-cutting change.
 
-A Unified Monorepo (Option C) eliminates submodule overhead completely. It enables atomic cross-skill refactoring in a single commit/PR, simplifies authoring a new skill from an 8-step multi-forge ritual down to a simple directory creation, unifies CI into a single fast pipeline, and simplifies the installer logic.
+The last two are the argument in miniature. A change that touches four
+repositories costs four PRs plus a pointer bump, so it gets done ad hoc, twice,
+and never pushed.
 
----
+| Maintenance surface | 26 repos | 3 families | 1 monorepo |
+| --- | --- | --- | --- |
+| Forge endpoints | 52 | 6 | 2 |
+| CI workflow definitions | 27 | 4 | 1 |
+| Branch protection policies | 27 | 4 | 1 |
+| PRs for a cross-cutting change | up to 26 + bump | up to 3 + bump | 1 |
+| Steps to add a skill | 8 (two forge APIs) | 1 (`mkdir` in a family) | 1 (`mkdir`) |
+| Pointer drift / detached HEAD risk | high | low | none |
 
-## The Evidence: Why One-Repo-Per-Skill Failed to Scale
+Three families capture roughly 88% of the available reduction.
 
-The 2026-08-19 audit demonstrated that independent repositories create an unmaintainable surface area:
+## Why not a single flat repo
 
-| Maintenance Surface | 1-Repo-Per-Skill (25 skills) | Families (~5 repos) | Unified Monorepo (1 repo) |
-|---|---|---|---|
-| Remote endpoints (GitHub + Gitea) | 52 endpoints | 12 endpoints | 2 endpoints |
-| Submodule entries in `.gitmodules` | 25 submodules | 5 submodules | 0 (none) |
-| CI workflow definitions (`lint.yml`) | 26 workflows | 6 workflows | 1 workflow |
-| Branch protection / ruleset policies | 26 configurations | 6 configurations | 1 configuration |
-| Operations to add a new skill | 8 steps (API + remotes + submodule) | Add to family repo | 1 step (`mkdir`) |
-| PRs for cross-skill refactors | 25 PRs + umbrella bump | ~5 PRs + umbrella bump | 1 PR (atomic) |
-| Risk of detached HEAD / pointer drift | High (routine on pull) | Moderate | Zero |
+The monorepo wins every operational column above, and on maintenance cost alone
+it is the correct answer. It was rejected on distribution grounds.
 
-### What One-Repo-Per-Skill Was Intended to Buy vs. Reality
+These skills are published. The agent-skills ecosystem is saturated: the
+curated directories index tens of thousands of skills and the aggregator lists
+carry over a thousand. In that market an undifferentiated repository of 17
+skills reads as a kitchen sink and is skipped. What gets adopted is a coherent
+set that carries a whole way of working.
 
-1. **Independent history and issues:**
-   - *Intended:* Clean per-skill commit histories and isolated issue trackers.
-   - *Reality:* Most skill commits are minor prose adjustments, prompt tuning, or shared reference updates. Managing 25 issue trackers across two forges fragments context rather than organizing it.
+Two clarifications on that reasoning, because it is easy to over-apply:
 
-2. **Selective installation:**
-   - *Intended:* Allowing users to clone only the skills they need.
-   - *Reality:* The runtime deployment tooling (`install-skills.sh` and `install-skills.bat`) already supports selective installation of specific skills (e.g. `./install-skills.sh smoke-test pushback`) regardless of source repository structure. The runtime destinations (`~/.agents/skills/`, `~/.claude/skills/`, `~/.gemini/config/skills/`, `<hermes>/skills/`) are always structured per-skill.
+1. **Repository count is not what creates coherence.** The most-cited positive
+   example in this space is a single repository with many skills, and it reads
+   as focused because it is framed as a methodology rather than a collection.
+   Three repositories with no thesis would read as three small kitchen sinks.
+   Each family repository therefore needs a real README argument for why its
+   skills belong together, and that is a deliverable of this migration, not a
+   nicety.
+2. **What splitting buys that framing cannot is independent adoptability.**
+   Someone who wants the orchestration set should be able to take it without
+   the completion-discipline set. That is the concrete benefit, and it is the
+   reason the split is worth its residual cost.
 
----
+Families also carry a real cost the earlier revision correctly identified:
+category boundaries are fuzzy and invite relitigation. This is mitigated, not
+solved, by keeping the count at three and by accepting that a skill sitting
+slightly awkwardly in a family is cheaper than a fourth family.
 
-## Detailed Evaluation of the 5 Open Design Questions
+## Target architecture
 
-### 1. History Preservation
+### Three family submodules under `skills-dev`
 
-**Question:** Is per-skill history worth preserving through the merge, and is the added complexity worth it?
+`skills-dev` remains the umbrella: it holds the index, the installer, the
+validation scripts, and three submodules.
 
-**Analysis:**
-- Commits in skill repositories contain valuable rationale for specific prompt formulations, edge-case handling in scripts, and eval evolutions.
-- Preserving history is technically straightforward in Git using either `git subtree add` or `git filter-repo` before merging.
-- A flat file copy would discard `git blame` context and commit timestamps, making future audits harder.
+**`skills-completion-discipline`** (7) - what an agent owes the work at the
+point it stops.
 
-**Decision:**
-- Preserve full commit history using `git subtree add` (or directory-prefix rewriting via `git filter-repo`).
-- Because each skill repository has relatively few total commits (typically 10 - 50 commits each), merging all 25 histories into `skills-dev` will create a clean, compact combined commit graph of ~500 - 800 commits, with zero repository bloat.
+- `maintaining-full-coverage`, `smoke-test`, `docs-update`,
+  `escalate-over-shortcut`, `wrap`, `reconcile-tasks`, `project-maintenance`
 
-### 2. Impact on Installers and Tooling
+**`skills-working-method`** (6) - habits applied while the work is happening.
 
-**Question:** How do `install-skills.sh`, `install-skills.bat`, and validation scripts change?
+- `research-first`, `running-spikes`, `pushback`, `effective-refactor`,
+  `fast-tests`, `using-a-debugger`
 
-**Analysis:**
-- **Current installer mechanism:**
-  `install-skills.sh` scans `$SRC_ROOT/*/` for directories with a `.git` entry and a `SKILL.md`. It executes `git -C "$src" ls-files` inside each submodule to build the list of tracked files matching the allowlist (`SKILL.md`, `scripts/`, `references/`, `assets/`, plus `.skillpack`).
-- **Monorepo installer mechanism:**
-  The installer will scan `$SRC_ROOT/skills/*/` (or top-level `$SRC_ROOT/*/` ignoring reserved directories like `scripts/`, `tests/`, `ci/`, `.github/`).
-  Instead of spawning 25 separate `git -C <submodule> ls-files` subprocesses, the installer can either query `git ls-files "$src"` against the umbrella repo root or perform a single fast `git ls-files` invocation.
-- **Top-level allowlist and `.skillpack`:**
-  The packaging semantics remain identical: only git-tracked files in the skill directory matching `SKILL.md`, `scripts/`, `references/`, `assets/`, and optional `.skillpack` entries are staged and mirrored.
-- **Validation scripts (`scripts/validate_skills.py`, `scripts/check_config_drift.py`):**
-  - `validate_skills.py`: Replaces the `.gitmodules` parser with a filesystem discovery of skill directories containing `SKILL.md`. Continues running `agentskills validate` and portability checks across all skills.
-  - `check_config_drift.py`: The ~400 lines of submodule drift checks (checking 25 `.markdownlint-cli2.jsonc` files, 25 `lint.yml` files, and fleet ruff pins) become completely obsolete. The umbrella's single root configuration naturally governs all skills.
-- **Sync scripts (`scripts/push-all.sh`, `scripts/pull-all.sh`):**
-  - Obsoleted. Standard `git pull` and `git push` work directly on `skills-dev`.
+**`skills-orchestration`** (6) - multi-agent, multi-machine, and quota
+concerns.
 
-### 3. Families vs. Single Monorepo
+- `agent-remote`, `external-harness-routing`, `fleet-orchestration`,
+  `review-in-parallel-pipelines`, `project-lock`, `cost-estimator`
 
-**Question:** Do families or a single repo win? Does separation buy anything concrete?
+### Skills that ship with their tool
 
-**Comparison:**
+A skill whose value collapses without a specific tool belongs with that tool,
+not in a set that advertises itself as portable. These leave `skills-dev`:
 
-| Evaluation Criteria | Option B: Skill Families (~5 repos) | Option C: Unified Monorepo (1 repo) | Winner |
-|---|---|---|---|
-| **Submodule Overhead** | Retains 5 submodules; still requires `.gitmodules`, recursive cloning, and pointer bumps. | Eliminates submodules entirely. Zero pointer management. | **Monorepo** |
-| **Cross-Skill Atomicity** | Refactors spanning multiple families still require multi-repo PR coordination. | 100% atomic commits across all skills and umbrella tooling. | **Monorepo** |
-| **CI Cost & Simplicity** | 6 separate CI workflows to maintain and trigger on every push. | 1 unified CI workflow. Faster execution via test batching. | **Monorepo** |
-| **New Skill Creation** | Must decide family placement; still requires multi-step repo setup if a new family is needed. | `mkdir skills/<name>` and write `SKILL.md`. | **Monorepo** |
-| **Tooling Complexity** | Installer must handle 2-level directory tree (`<family>/<skill>/`). | Installer handles clean, flat skill list (`skills/<name>/`). | **Monorepo** |
-| **Independent Release Cadence** | Theoretical advantage, but unused: skills are not versioned or distributed via package managers. | Perfect match for actual workflow: skills updated and installed continuously. | **Monorepo** |
+| Skill | New home |
+| --- | --- |
+| `check-memory`, `memory-cleanup` | `packages/replica/skills/` |
+| `capture-idea`, `promote-project`, `find-task` | `packages/project_tracker/skills/` |
+| `progress-beacon` | `satellites/agent-statusline/skills/` |
 
-**Conclusion:** Families provide no concrete technical advantages. They retain the operational failure modes of submodules while adding taxonomy ambiguity. A single monorepo wins across every operational dimension.
+`progress-beacon` joins the `statusline` skill, which already lives there and
+is already installed by `onboard`'s `SkillsFeature` via a direct copy. That
+established path is the model for all six.
 
-### 4. The Boundary Rule and Taxonomy Problem
+The test is whether the skill documents a by-hand path that still delivers its
+value, not whether it calls the tool or how often. `find-task` never writes to
+the tracker and still ships with it, because a cross-project sweep has no
+by-hand substitute once the trackerless registry is retired and there is no
+defined set of projects to enumerate. `capture-idea` and `promote-project` go
+for the same reason: registration is the deliverable, and its fallback chain
+loses its last rung with that registry.
 
-**Question:** What is the boundary rule for families, and how do we prevent arbitrary classification?
+Three skills that call `project_tracker` stay in the public set, because each
+documents a path that works without it:
 
-**Analysis of Proposed Families:**
-- Proposed: `completion`, `orchestration`, `project-lifecycle`, `memory`, `practice`.
-- Real-world classification friction:
-  - `cost-estimator`: Is it `orchestration` (measuring agent sessions), `practice` (harness discipline), or `tooling`?
-  - `using-a-debugger`: Is it `practice` (debugging methodology) or `tooling` (language debuggers)?
-  - `project-lock`: Is it `project-lifecycle` (project management) or `orchestration` (multi-agent locking)?
-  - `unity-batchmode-worktree`: Is it `orchestration` (worktree collaboration), `practice`, or a domain-specific category?
+- `wrap` declares tool-agnosticism as a design goal.
+- `reconcile-tasks` declares the dependency soft in its own README, and three
+  of its four write paths never touch the tracker.
+- `project-maintenance` pairs every checklist row with a literal shell command,
+  and one whole check category stays manual even when the MCP server answers.
+  It also reads `wrap`'s hygiene checklist and defers to `docs-update`, so it
+  belongs in the same adoptable set as both.
 
-**Conclusion:**
-Boundaries between skill categories are fluid. Coupling repository boundaries to subjective semantic categories guarantees ongoing debate, cross-family dependencies, and awkward refactoring boundaries. In a monorepo, logical categorization can exist purely in documentation (e.g. `README.md` or metadata tags) without imposing rigid repository-level constraints.
+### Retired
 
-### 5. Migration Cost vs. Status Quo (Scan vs. Restructure)
+`unity-batchmode-worktree` is retired as a skill, with its content reaped as
+widely as it will go rather than deleted.
 
-**Question:** Is maintaining automated drift scans cheaper than migrating?
+- The persistent warm worktree pool protocol (pool slots, the
+  `.worktree-reserved` marker, the survey / reserve / prep / release cycle)
+  moves into `fleet-orchestration`, genericized away from Unity. This is not
+  redundant with that skill's existing worktree material, which covers
+  ephemeral per-dispatch worktrees and base-commit correctness. Reusing an
+  expensive-to-build worktree across sessions is a different problem, and it
+  applies to any project with costly first-build state (a large
+  `node_modules`, a Rust `target/`, a populated ccache), not only to a Unity
+  `Library/`.
+- Any remaining transferable material should be placed in whichever existing
+  skill it fits rather than concentrated in one. Implementers should look for
+  homes before discarding anything.
+- The genuinely Unity-specific remainder (batch-mode invocation, the `dev`
+  scratch-branch squash-merge ritual, `Library/`, `TestResults/`) moves to the
+  `liminal` project's `AGENTS.md` and to other Unity projects.
 
-**Analysis:**
-- **Cost of Status Quo + Scans:**
-  - Automated drift scans (`check_config_drift.py`, scheduled forge syncs) detect drift after it happens, but they cannot prevent it.
-  - The cognitive and procedural friction remains: creating a new skill requires 8 manual steps across GitHub and Gitea APIs; pulling updates frequently results in detached HEAD states; fanning out changes across 25 repos wastes substantial agent and developer time.
-  - As the ecosystem grows toward 50 skills, this friction becomes crippling.
-- **Cost of Monorepo Migration:**
-  - One-time migration script (preserving git history via subtree merges).
-  - Updating `install-skills.sh`, `install-skills.bat`, and `validate_skills.py`.
-  - Updating CI to run directly over `skills/`.
-  - Archiving child repositories on GitHub and Gitea with a redirection notice.
-  - Estimated migration effort: 1 focused implementation sprint.
+## Retiring the trackerless registry
 
-**Conclusion:**
-The one-time migration cost is modest, whereas the recurring tax of managing 25+ submodules is permanent and compounding. Migration is overwhelmingly the better investment.
+`~/.project-tracker/projects.json` (hyphenated) is an agent-maintained
+convention for installs without project-tracker. It is distinct from
+`~/.project_tracker/` (underscored), which is the tool's own database. The
+registry is retired along with the skills that maintained it.
 
----
+Only the **tracker-absent** path is removed. The **MCP-absent** path stays:
+`project-tracker list --json`, and direct `PLAN.md` / `TODO.md` /
+`.maintenance.json` reads remain valid, because the tool can be installed
+without the MCP server being registered.
 
-## Target Architecture: The Unified `skills-dev` Monorepo
+Scope, confirmed by grep across every `SKILL.md`, `README.md`, and
+`references/` file:
 
-### 1. Proposed Directory Layout
+- **Edited:** `capture-idea` (SKILL.md frontmatter, workflow step 3, and the
+  report-back knock-on; README.md), `promote-project` (frontmatter, the fourth
+  registration bullet, and the verify checklist knock-on), `find-task`
+  (frontmatter, the fallback paragraph, the calibration note; README.md), and
+  `fleet-orchestration` (four sites: frontmatter, pre-flight fleet-wide
+  bullet, maintenance breadcrumbs, feature-pass workflow).
+- **Untouched:** `reconcile-tasks` and `project-maintenance` never referenced
+  the registry. Their fallbacks are already file-and-git based.
 
-```text
-skills-dev/
-├── .github/
-│   └── workflows/
-│       └── lint.yml             # Single unified CI workflow
-├── ci/
-│   ├── post-coverage-status.py
-│   └── ...
-├── docs/
-│   └── ...
-├── install-skills.sh            # Updated for monorepo layout
-├── install-skills.bat           # Updated for monorepo layout
-├── pyproject.toml               # Single root configuration for ruff, pytest, coverage
-├── README.md                    # Catalog of all skills with thematic groupings
-├── AGENTS.md                    # Simplified developer and agent instructions
-├── scripts/
-│   ├── validate_skills.py       # Validates all skills/ directories
-│   ├── clean-room.sh            # Clean-room test runner
-│   └── hook-timing.py
-├── skills/                      # All skill source directories
-│   ├── agent-remote/
-│   │   ├── SKILL.md
-│   │   ├── README.md
-│   │   ├── references/
-│   │   ├── tests/
-│   │   └── evals/
-│   ├── capture-idea/
-│   ├── check-memory/
-│   ├── cost-estimator/
-│   ├── docs-update/
-│   ├── escalate-over-shortcut/
-│   ├── external-harness-routing/
-│   ├── fast-tests/
-│   ├── find-task/
-│   ├── fleet-orchestration/
-│   ├── maintaining-full-coverage/
-│   ├── memory-cleanup/
-│   ├── progress-beacon/
-│   ├── project-lock/
-│   ├── project-maintenance/
-│   ├── promote-project/
-│   ├── pushback/
-│   ├── reconcile-tasks/
-│   ├── research-first/
-│   ├── review-in-parallel-pipelines/
-│   ├── running-spikes/
-│   ├── smoke-test/
-│   ├── unity-batchmode-worktree/
-│   ├── using-a-debugger/
-│   └── wrap/
-└── tests/
-    ├── test_install_skills.py
-    └── test_validate_skills.py
-```
+### fleet-orchestration declares a dependency
 
-### 2. Single-Step Workflow for Adding a New Skill
+`fleet-orchestration` stays in the public orchestration set, and the registry
+was carrying all of its trackerless weight: `project-tracker list --json`
+still requires the tool, and no filesystem enumeration is documented anywhere
+in the file.
 
-In the monorepo, adding a skill becomes trivial:
-1. Create directory `skills/<name>/`
-2. Add `SKILL.md` (and optional `references/`, `scripts/`, `assets/`, `evals/`, `.skillpack`)
-3. Run `python scripts/validate_skills.py` and `pytest`
-4. Commit and push directly to `skills-dev`
+Resolution: drop to two tiers (MCP, then CLI) and state plainly that
+**fleet-wide enumeration requires project-tracker installed**. On a machine
+without it, the user names the target repositories explicitly. This is honest
+about a dependency that already existed rather than implying a fallback that
+does not work, and the skill's core value (dispatch discipline, base-commit
+correctness, worktree isolation) stays fully portable.
 
-No GitHub repository creation, no Gitea API calls, no relative submodule wiring, and no submodule pointer commits.
+Do not invent a filesystem-walk fallback. Unbounded recursive scans are their
+own hazard, and no such practice exists in the corpus to document.
 
-### 3. Claude Code Plugin Compatibility
+## Consequences that must be handled
 
-Claude Code supports loading a plugin directory with `SKILL.md` at its root via `--plugin-dir <path>` (Claude Code >= 2.1.142).
-With the monorepo layout, each `skills/<name>` directory maintains `SKILL.md` at its root, so `--plugin-dir ./skills/<name>` continues to work identically for single-skill clean-room testing and local plugin invocation.
+### The installer needs a two-level glob
 
----
+`install-skills.sh` discovers skills with `for src in "$SRC_ROOT"/*/` gated on
+`.git` existing at that level. Under families, `SKILL.md` sits at
+`<family>/<skill>/SKILL.md`, two levels down. The same change is needed for the
+relocated skills, whose directories are plain monorepo subdirectories with no
+`.git` of their own.
 
-## Migration Execution Plan
+Both the `.git` gate and the glob depth must change, identically in
+`install-skills.sh` and `install-skills.bat`. The gate is already redundant
+(`SKILL.md` presence is checked downstream) and the tracked-file filter
+underneath works fine on a non-repo subdirectory, because `git -C <dir>
+ls-files` resolves the enclosing worktree. Note that CI shellchecks the `.sh`
+half only; the `.bat` half has no execution test, so its edit needs manual
+verification on Windows.
 
-### Phase 1: Scripted History Stitching
-1. Write a migration helper script `scripts/migrate-to-monorepo.sh`.
-2. For each submodule path in `.gitmodules`:
-   - Use `git subtree add --prefix=skills/<name> <name> main` (or read the submodule commit directly).
-   - Verify that history and file integrity match the submodule head.
-3. Remove `.gitmodules` and all submodule git tracking configurations.
+### Validation must follow the skills
 
-### Phase 2: Tooling & Installer Updates
-1. Update `install-skills.sh` and `install-skills.bat`:
-   - Change discovery root to `$SRC_ROOT/skills/*/`.
-   - Update `build_staging` to stage files from `skills/<name>/`.
-2. Update `scripts/validate_skills.py`:
-   - Discover skills by scanning `$SRC_ROOT/skills/`.
-3. Update `pyproject.toml` and `.markdownlint-cli2.jsonc`:
-   - Adjust glob paths to cover `skills/**/*.py` and `skills/**/*.md`.
-4. Remove obsolete scripts:
-   - `scripts/push-all.sh`, `scripts/push-all.bat`
-   - `scripts/pull-all.sh`, `scripts/pull-all.bat`
-   - `scripts/check_config_drift.py` (and associated tests)
+`scripts/validate_skills.py` and `scripts/check_config_drift.py` both derive the
+skill set from `.gitmodules`, deliberately, so a broken recursive checkout
+cannot pass vacuously. Relocated skills stop being submodules and would drop
+out of both silently, losing `agentskills validate` frontmatter checking and
+the portability lint that bans machine-specific paths. That lint matters most
+precisely for these skills, which are the ones coupled to local tooling.
 
-### Phase 3: Verification & Test Suite Adaptation
-1. Run full test suite: `pytest`, `ruff check`, `ruff format --check`, `shellcheck`, `aislop scan`.
-2. Execute `test-install.sh` to confirm dry-run, installation, mirror cleanup, and `.skillpack` behavior against the new directory layout.
-3. Perform end-to-end dry-run install: `./install-skills.sh -n --all`.
+Either generalize both scripts to also scan `packages/*/skills/*` and
+`satellites/*/skills/*`, or stand up a schoen-lab counterpart. schoen-lab CI has
+no skill validation today.
 
-### Phase 4: Remote Archival
-1. On GitHub and Gitea, set standalone `skills-<name>` repositories to read-only / archived.
-2. Update their READMEs with a banner redirecting contributors to `skills-dev`.
+### A dangling cross-reference
 
----
+`project-lock/SKILL.md:155` cross-references `unity-batchmode-worktree` and its
+`.worktree-reserved` marker by name. It must repoint at `fleet-orchestration`'s
+new warm-pool section.
 
-## Non-Goals & Invariants Preserved
+### pr-crew must be paused on the skill repos
 
-- **Skill authoring format:** No changes to `SKILL.md` frontmatter, Markdown body, or YAML specification conformance (`agentskills validate`).
-- **Runtime destinations:** Installed layout in `~/.agents/skills/<name>/`, `~/.claude/skills/<name>/`, `~/.gemini/config/skills/<name>/`, and `<hermes>/skills/<name>/` remains identical.
-- **Portability rules:** Prohibition of machine-specific absolute paths in tracked files remains strictly enforced by CI.
+pr-crew opens PRs against these repositories automatically. Any PR that lands
+mid-migration may or may not be captured by the subtree merge depending on
+timing, and any that lands afterwards goes into a repository nobody reads
+again. Pause it on `skills-*` before Phase 1 and resolve the open PRs
+deliberately.
+
+## Migration plan
+
+### Phase 0: reconcile before touching history
+
+Nothing below is safe until this is done: at the time of writing, two commits
+existed only in `remotes/gitea/main`, reachable from no local branch or tag, so
+a subtree operation scoped to local refs would have dropped them silently.
+
+Status as of 2026-08-26:
+
+1. Done. All five local-only WIP branches backed up to Gitea.
+2. Done. `fleet-orchestration` reconciled to `1746c94`; the local duplicate was
+   a strict subset and also incorrect.
+3. Done. `promote-project` reconciled to `4432270`; the local duplicate was a
+   strict subset.
+4. Done. `project-maintenance` PR #5 squash-merged.
+5. Done. `skills-dev#29` closed as superseded (pointer bumps at the three
+   replaced commits).
+6. Outstanding: `project-lock`'s two commits are pushed to Gitea but not on
+   `main`.
+7. Outstanding: pause pr-crew and resolve its three open PRs.
+8. Outstanding: GitHub `main` still trails Gitea on `fleet-orchestration` and
+   `promote-project`.
+
+### Phase 1: create the three family repositories
+
+Create each on both forges, then populate by subtree merge from each skill's
+current repository so per-skill history is preserved under its new prefix.
+Write each family README's thesis as part of this phase, not afterwards.
+
+### Phase 2: relocate the six tool-coupled skills
+
+Move by subtree into `packages/replica/skills/`,
+`packages/project_tracker/skills/`, and `satellites/agent-statusline/skills/`.
+Apply the registry retirement per the scope above.
+
+### Phase 3: retire `unity-batchmode-worktree`
+
+Reap the warm-pool protocol into `fleet-orchestration`, place any other
+transferable material in whichever skill fits, move the Unity remainder to
+`liminal` and the other Unity projects, and fix `project-lock`'s
+cross-reference.
+
+### Phase 4: tooling
+
+Update the installer glob and `.git` gate in both implementations, generalize
+the validation scripts, extend `onboard`'s `SkillsFeature` to cover the
+relocated skills, and update `skills-dev`'s `.gitmodules`, ruff excludes, and
+AGENTS.md authoring workflow.
+
+### Phase 5: archive
+
+Archive the 26 standalone repositories read-only on both forges with a README
+banner pointing at the new home. Do not delete: existing clones and external
+links should keep resolving.
+
+## Non-goals and invariants
+
+- No change to `SKILL.md` frontmatter, body format, or `agentskills validate`
+  conformance.
+- No change to runtime install destinations: `~/.agents/skills/<name>/`,
+  `~/.claude/skills/<name>/`, `~/.gemini/config/skills/<name>/`, and
+  `<hermes>/skills/<name>/` stay flat and per-skill. The family grouping is a
+  source-layout concern only and must not leak into installed layout, or every
+  harness's skill discovery and the `SKILL_HOOKS` entries `onboard` writes into
+  `settings.json` would need to handle nesting.
+- The portability rule (no machine-specific absolute paths in tracked files)
+  continues to apply to every skill in every location.

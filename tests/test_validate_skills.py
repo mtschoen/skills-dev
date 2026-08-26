@@ -98,13 +98,14 @@ class TestCheckPortability:
         assert "user memory note" in errors[0]
 
     def test_personal_repo_and_home_paths_are_flagged(self, tmp_path):
+        home_path = "/home/" + "schoen/foo"
         make_skill(
             tmp_path,
             "demo",
             {
                 "references/setup.md": (
                     "Copy ~/schoen-claude-status/settings.json\n"
-                    "or /home/schoen/foo\n"
+                    f"or {home_path}\n"
                     "or C:/Users/mtsch/bar\n"
                     "or Y:\\baz.\n"
                 )
@@ -155,12 +156,13 @@ class TestCheckPortability:
         assert "machine-specific home path" in errors[0]
 
     def test_checker_and_its_tests_are_file_exempt(self, tmp_path):
+        home_path = "/home/" + "schoen/foo"
         make_skill(
             tmp_path,
             ".",
             {
                 "scripts/validate_skills.py": "PATTERN = '~/.claude/notes/x'\n",
-                "tests/test_validate_skills.py": "DATA = '/home/schoen/foo'\n",
+                "tests/test_validate_skills.py": f"DATA = '{home_path}'\n",
                 "docs/guide.md": "clean\n",
             },
         )

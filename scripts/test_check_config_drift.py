@@ -355,6 +355,53 @@ def test_check_code_without_ci_skips_when_lint_yml_missing(tmp_path):
     assert guard.check_code_without_ci(tmp_path, "repo") == []
 
 
+def test_check_code_without_ci_uses_nested_child_workflows_when_present(tmp_path):
+    repo = tmp_path / "family"
+    _init_repo(repo)
+    child = repo / "child"
+    child.mkdir(parents=True)
+    (child / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    (child / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
+    _write_lint_yml(repo, "jobs:\n  markdown:\n    steps: []\n")
+    _write_lint_yml(
+        child,
+        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck deploy.sh\n",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    assert guard.check_code_without_ci(tmp_path, "family") == []
+
+
+def test_check_code_without_ci_flags_nested_child_workflow_missing_steps(tmp_path):
+    repo = tmp_path / "family"
+    _init_repo(repo)
+    child = repo / "child"
+    child.mkdir(parents=True)
+    (child / "run.py").write_text("print('hi')\n", encoding="utf-8")
+    _write_lint_yml(repo, "jobs:\n  markdown:\n    steps: []\n")
+    _write_lint_yml(child, "jobs:\n  markdown:\n    steps: []\n")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "family")
+    assert len(errors) == 1
+    assert "family/child:" in errors[0]
+    assert "ruff+pytest" in errors[0]
+
+
+def test_check_ruff_pin_checks_nested_child_workflows(tmp_path):
+    repo = tmp_path / "family"
+    _init_repo(repo)
+    child = repo / "child"
+    _write_lint_yml(repo, "- run: pip install ruff==0.15.15\n")
+    _write_lint_yml(child, "- run: pip install ruff==0.11.0\n")
+    errors = guard.check_ruff_pin(tmp_path, "family")
+    assert len(errors) == 1
+    assert errors[0].startswith("family/child/lint.yml:")
+    assert "0.11.0" in errors[0]
+
+
 # --- evaluate / main ---
 
 
@@ -399,8 +446,58 @@ def test_evaluate_drifted_repo_exits_one(tmp_path):
     assert any("violations detected" in line for line in lines)
 
 
+def test_evaluate_discovers_nested_gitmodule_skills(tmp_path):
+    root = tmp_path / "umbrella"
+    parent = root / "family"
+    parent.mkdir(parents=True, exist_ok=True)
+    _init_repo(parent)
+    canonical = json.dumps(guard.CANONICAL_MODAL_CONFIG, indent=2)
+    (parent / ".markdownlint-cli2.jsonc").write_text(canonical, encoding="utf-8")
+    _write_lint_yml(parent, _GOOD_LINT_YML)
+    _git("add", "-A", cwd=parent)
+    _git("commit", "-m", "init", cwd=parent)
+
+    # create the nested skill
+    reader = parent / "reader"
+    reader.mkdir()
+    (reader / "SKILL.md").write_text("# reader\n")
+    _git("add", "-A", cwd=parent)
+    _git("commit", "-m", "add reader", cwd=parent)
+
+    _init_repo(root)
+    (root / ".gitmodules").write_text(
+        '[submodule "family"]\n\tpath = family\n\turl = ../skills-family.git\n',
+        encoding="utf-8",
+    )
+    code, lines = guard.evaluate(root)
+    assert code == 0
+    assert any("OK:" in line for line in lines)
+
+
+def test_evaluate_includes_extra_root_skills(tmp_path):
+    root = tmp_path / "umbrella"
+    _init_repo(root)
+    (root / ".gitmodules").write_text("", encoding="utf-8")
+    extra = tmp_path / "mono"
+    skill = extra / "satellites" / "project" / "skills" / "migrated"
+    _init_repo(skill)
+    canonical = json.dumps(guard.CANONICAL_MODAL_CONFIG, indent=2)
+    (skill / ".markdownlint-cli2.jsonc").write_text(canonical, encoding="utf-8")
+    _write_lint_yml(skill, _GOOD_LINT_YML)
+    _git("add", "-A", cwd=skill)
+    _git("commit", "-m", "init", cwd=skill)
+
+    code, lines = guard.evaluate(root, extra_skill_roots=[str(extra)])
+    assert code == 0
+    assert any("submodules match" in line for line in lines)
+
+
 def test_main_prints_lines_and_exits_with_evaluate_code(monkeypatch, capsys):
-    monkeypatch.setattr(guard, "evaluate", lambda _root: (0, ["OK: fine"]))
+    monkeypatch.setattr(
+        guard,
+        "evaluate",
+        lambda _root, extra_skill_roots=None: (0, ["OK: fine"]),
+    )
     with pytest.raises(SystemExit) as excinfo:
         guard.main()
     assert excinfo.value.code == 0

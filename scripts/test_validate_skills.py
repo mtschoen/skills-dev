@@ -29,12 +29,16 @@ def _good_skill(name):
     return f'---\nname: {name}\ndescription: "A valid one-line description."\n---\n\n# Title\n'
 
 
-def _make_repo(skills):
-    """skills: dict name -> SKILL.md text | None (empty dir) | dict (files, no SKILL.md)."""
-    root = Path(tempfile.mkdtemp())
-    (root / ".gitmodules").write_text(_gitmodules(list(skills)), encoding="utf-8")
+def _make_repo(skills: dict[str, str], write_gitmodules: bool = True) -> Path:
+    repo = Path(tempfile.mkdtemp())
+    (repo / ".git").mkdir()
+    if write_gitmodules:
+        modules = [
+            f'[submodule "{name}"]\n\tpath = {name}\n\turl = ../x\n' for name in skills
+        ]
+        (repo / ".gitmodules").write_text("".join(modules), encoding="utf-8")
     for name, content in skills.items():
-        d = root / name
+        d = repo / name
         if content is None:
             d.mkdir(parents=True, exist_ok=True)
         elif isinstance(content, dict):
@@ -44,7 +48,7 @@ def _make_repo(skills):
         else:
             d.mkdir(parents=True, exist_ok=True)
             (d / "SKILL.md").write_text(content, encoding="utf-8")
-    return root
+    return repo
 
 
 def _pass_runner(skill_dir):
@@ -103,6 +107,35 @@ def test_validate_repo_counts_validated_skills():
     repo = _make_repo({"alpha": _good_skill("alpha"), "beta": _good_skill("beta")})
     errors, validated, skipped = validator.validate_repo(repo, runner=_pass_runner)
     assert errors == [] and validated == 2 and skipped == []
+
+
+def test_nested_gitmodule_skill_is_discovered_for_validation():
+    repo = _make_repo(
+        {
+            "families": {"README.md": "not a skill\n"},
+            "families/reader": _good_skill("reader"),
+        }
+    )
+    (repo / ".gitmodules").write_text(_gitmodules(["families"]), encoding="utf-8")
+    errors, validated, skipped = validator.validate_repo_with_options(
+        repo, runner=_pass_runner
+    )
+    assert errors == [] and validated == 1 and skipped == []
+
+
+def test_extra_root_skills_are_included_in_validation():
+    repo = Path(tempfile.mkdtemp())
+    (repo / ".gitmodules").write_text(_gitmodules([]), encoding="utf-8")
+    extra = repo / "monolith"
+    skill = extra / "packages" / "project" / "skills" / "migrated"
+    skill.mkdir(parents=True)
+    skill_md = skill / "SKILL.md"
+    skill_md.write_text(_good_skill("migrated"), encoding="utf-8")
+    assert repo.is_dir()
+    errors, validated, skipped = validator.validate_repo_with_options(
+        repo, runner=_pass_runner, extra_skill_roots=[str(extra)]
+    )
+    assert errors == [] and validated == 1 and skipped == []
 
 
 def test_validate_repo_reports_skipped_wip():
@@ -213,11 +246,72 @@ def test_validate_skill_runner_failure_without_output_uses_fallback_message():
 
 
 def test_validate_repo_without_gitmodules_is_an_error():
-    errors, validated, skipped = validator.validate_repo(
+    errors, validated, skipped = validator.validate_repo_with_options(
         Path(tempfile.mkdtemp()), runner=_pass_runner
     )
     assert validated == 0 and skipped == []
     assert len(errors) == 1 and ".gitmodules" in errors[0]
+
+
+def test_validate_repo_discovers_nested_family_skills():
+    repo = _make_repo(
+        {"family/alpha": _good_skill("alpha"), "family/beta": _good_skill("beta")},
+        write_gitmodules=False,
+    )
+    # create the family submodule structure
+    (repo / ".gitmodules").write_text(
+        '[submodule "family"]\n\tpath = family\n\turl = ../family.git\n',
+        encoding="utf-8",
+    )
+    errors, validated, _skipped = validator.validate_repo_with_options(
+        repo, runner=_pass_runner
+    )
+    assert errors == []
+    assert validated == 2
+
+
+def test_validate_repo_ignores_dot_directories_inside_a_family():
+    repo = _make_repo({"family/alpha": _good_skill("alpha")}, write_gitmodules=False)
+    (repo / ".gitmodules").write_text(
+        '[submodule "family"]\n\tpath = family\n\turl = ../family.git\n',
+        encoding="utf-8",
+    )
+    (repo / "family" / ".github" / "workflows").mkdir(parents=True)
+    errors, validated, skipped = validator.validate_repo_with_options(
+        repo, runner=_pass_runner
+    )
+    assert errors == []
+    assert validated == 1
+    assert skipped == []
+
+
+def test_validate_repo_fails_loudly_on_empty_submodule():
+    repo = _make_repo({}, write_gitmodules=False)
+    # declare an empty submodule
+    (repo / ".gitmodules").write_text(
+        '[submodule "empty"]\n\tpath = empty\n\turl = ../empty.git\n', encoding="utf-8"
+    )
+    (repo / "empty").mkdir()
+    errors, validated, _skipped = validator.validate_repo_with_options(
+        repo, runner=_pass_runner
+    )
+    assert validated == 0
+    assert any(
+        "empty submodule dir" in e and "checkout looks broken" in e for e in errors
+    )
+
+
+def test_validate_repo_scans_extra_roots(tmp_path):
+    repo = _make_repo({"alpha": _good_skill("alpha")})
+    extra = tmp_path / "extra"
+    extra_skill = extra / "packages" / "repo" / "skills" / "beta"
+    extra_skill.mkdir(parents=True)
+    (extra_skill / "SKILL.md").write_text(_good_skill("beta"), encoding="utf-8")
+    errors, validated, _skipped = validator.validate_repo_with_options(
+        repo, runner=_pass_runner, extra_skill_roots=[str(extra)]
+    )
+    assert errors == []
+    assert validated == 2
 
 
 # --- main ---
@@ -225,7 +319,10 @@ def test_validate_repo_without_gitmodules_is_an_error():
 
 def test_main_prints_lines_and_exits_with_evaluate_code():
     original_evaluate = validator.evaluate
-    validator.evaluate = lambda _root: (0, ["OK: all 1 skills valid"])
+    validator.evaluate = lambda _root, runner=None, extra_skill_roots=None: (
+        0,
+        ["OK: all 1 skills valid"],
+    )
     exit_code = None
     try:
         validator.main()

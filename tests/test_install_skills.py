@@ -26,7 +26,11 @@ def home_with(tmp_path, *harness_dirs):
     dirs (e.g. ".claude") pre-created so default mode treats them as present."""
     for harness in harness_dirs:
         (tmp_path / harness).mkdir(parents=True, exist_ok=True)
-    return {"HOME": str(tmp_path), "HERMES_HOME": str(tmp_path / "hermes-home")}
+    return {
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes-home"),
+        "USERPROFILE": str(tmp_path),
+    }
 
 
 class TestMirrorPreservesCaches:
@@ -289,6 +293,50 @@ def test_check_skips_debugger_setup_on_clean_install(tmp_repo, tmp_path):
 
     assert result.returncode == 0
     assert not marker.exists()
+
+
+def test_setup_debuggers_uses_nested_using_a_debugger_path(tmp_repo, tmp_path):
+    make_skill(
+        tmp_repo,
+        "working-method/using-a-debugger",
+        files={
+            "SKILL.md": "# using-a-debugger\n",
+            "scripts/setup-debuggers.py": "print('nested setup running')\n",
+        },
+    )
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\nprintf 'nested debugger setup invoked\\n'\n"
+    )
+    fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
+    if os.name == "nt":
+        fake_bin_path = subprocess.run(
+            ["cygpath", "-u", str(fake_bin)], capture_output=True, check=True, text=True
+        ).stdout.strip()
+        shell_path = subprocess.run(
+            ["bash", "-lc", 'printf %s "$PATH"'],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+        env_path = f"{fake_bin_path}:{shell_path}"
+    else:
+        env_path = f"{fake_bin}{os.pathsep}{os.environ['PATH']}"
+    env = home_with(tmp_path)
+    env["PATH"] = env_path
+
+    result = run_install_script(
+        tmp_repo,
+        "--agents",
+        "-y",
+        "--setup-debuggers",
+        "using-a-debugger",
+        env_override=env,
+    )
+    assert result.returncode == 0
+    assert "nested debugger setup invoked" in result.stdout
 
 
 class TestInstallContent:
@@ -654,9 +702,51 @@ class TestDefaultSelection:
         for name in ("alpha", "beta", "gamma"):
             assert (skills / name / "SKILL.md").exists()
 
-    def test_skips_non_submodule_dirs(self, tmp_repo, tmp_path):
+    def test_default_installs_two_level_family_skills(self, tmp_repo, tmp_path):
+        make_skill(
+            tmp_repo,
+            "maintenance/docs-update",
+            files={"SKILL.md": "# family docs update\n"},
+        )
+        make_skill(
+            tmp_repo, "maintenance/runbook", files={"SKILL.md": "# family runbook\n"}
+        )
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", env_override=env)
+        assert result.returncode == 0
+        skills = tmp_path / ".claude" / "skills"
+        assert not (skills / "maintenance").exists()
+        assert (
+            skills / "docs-update" / "SKILL.md"
+        ).read_text() == "# family docs update\n"
+        assert (skills / "runbook" / "SKILL.md").read_text() == "# family runbook\n"
+
+    def test_default_skips_duplicate_skill_names(self, tmp_repo, tmp_path):
+        make_skill(
+            tmp_repo,
+            "notes",
+            files={"SKILL.md": "# top level notes\n"},
+        )
+        make_skill(
+            tmp_repo,
+            "maintenance/notes",
+            files={"SKILL.md": "# family notes\n"},
+        )
+        make_skill(
+            tmp_repo,
+            "maintenance/runbook",
+            files={"SKILL.md": "# family runbook\n"},
+        )
+        env = home_with(tmp_path, ".claude")
+        result = run_install_script(tmp_repo, "-y", env_override=env)
+        assert result.returncode == 0
+        skills = tmp_path / ".claude" / "skills"
+        assert (skills / "notes" / "SKILL.md").read_text() == "# family notes\n"
+        assert (skills / "runbook" / "SKILL.md").read_text() == "# family runbook\n"
+
+    def test_skips_dirs_without_skill_md(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "real-skill")
-        # A plain directory without a .git marker is not a submodule.
+        # A plain directory without a .git marker is not an installable skill.
         non_skill = tmp_repo / "not-a-submodule"
         non_skill.mkdir()
         (non_skill / "SKILL.md").write_text("# not a submodule\n")
@@ -668,6 +758,7 @@ class TestDefaultSelection:
         assert not (skills / "not-a-submodule").exists()
 
     def test_skips_skill_without_skill_md(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "real-skill")
         make_skill(tmp_repo, "no-content", files={"README.md": "just a readme\n"})
         env = home_with(tmp_path, ".claude")
         result = run_install_script(tmp_repo, "-y", env_override=env)
