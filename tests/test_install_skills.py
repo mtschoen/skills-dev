@@ -26,7 +26,12 @@ def home_with(tmp_path, *harness_dirs):
     dirs (e.g. ".claude") pre-created so default mode treats them as present."""
     for harness in harness_dirs:
         (tmp_path / harness).mkdir(parents=True, exist_ok=True)
-    return {"HOME": str(tmp_path), "HERMES_HOME": str(tmp_path / "hermes-home")}
+    return {
+        "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),
+        "LOCALAPPDATA": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes-home"),
+    }
 
 
 class TestMirrorPreservesCaches:

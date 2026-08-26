@@ -493,6 +493,10 @@ class TestResolveDestinations:
 
     def test_default_existing_discovery(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("LocalAppData", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
         (tmp_path / ".claude").mkdir()
 
         parser = argparse.ArgumentParser()
@@ -598,6 +602,10 @@ class TestMainCli:
             claude_skills, "research-first", ["hooks/prompt-reminder.sh"]
         )
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("LocalAppData", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
         monkeypatch.setattr(
             sys, "argv", ["manage_hooks.py", "--claude", "-y", "research-first"]
         )
@@ -609,5 +617,9 @@ class TestMainCli:
 
     def test_main_no_destinations(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("LocalAppData", raising=False)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
         monkeypatch.setattr(sys, "argv", ["manage_hooks.py"])
         assert main() == 0
