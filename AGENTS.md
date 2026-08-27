@@ -1,6 +1,6 @@
 # skills-dev - agent instructions
 
-This repo is the umbrella that ties together three themed family submodules, each an independently adoptable set of related skills, plus a fourth submodule currently being retired. Every top-level directory other than `.claude/`, `.github/`, `ci/`, `docs/`, `hooks/`, `scripts/`, `tests/`, `LICENSE`, `pyproject.toml`, `uv.lock`, and `install-skills.*` is a git submodule pointing at a family repository on GitHub: `completion-discipline`, `orchestration`, `working-method`, and (until its retirement lands) `unity-batchmode-worktree`.
+This repo is the umbrella that ties together three themed family submodules, each an independently adoptable set of related skills. Every top-level directory other than `.claude/`, `.github/`, `ci/`, `docs/`, `hooks/`, `scripts/`, `tests/`, `LICENSE`, `pyproject.toml`, `uv.lock`, and `install-skills.*` is a git submodule pointing at a family repository on GitHub: `completion-discipline`, `orchestration`, and `working-method`.
 
 ## Adding a new skill
 

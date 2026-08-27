@@ -12,7 +12,7 @@ Three family submodules, each with its own thesis for why its skills belong toge
 
 **`orchestration`** (6 skills) - what changes when work outgrows one agent, one machine, or one budget: `agent-remote`, `external-harness-routing`, `fleet-orchestration`, `review-in-parallel-pipelines`, `project-lock`, `cost-estimator`.
 
-`unity-batchmode-worktree` is a fourth submodule, currently being retired: its warm-worktree-pool protocol is moving into `fleet-orchestration` (genericized beyond Unity) and its Unity-specific remainder is moving to the projects that use it. Each skill directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
+Each skill directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
 
 A skill whose value collapses without a specific tool ships alongside that tool instead of living here: `capture-idea`, `find-task`, and `promote-project` at `packages/project_tracker/skills/`, `check-memory` and `memory-cleanup` at `packages/replica/skills/`, and `progress-beacon` at `satellites/agent-statusline/skills/`, all in the [schoen-lab](https://github.com/mtschoen/schoen-lab) monorepo. See [`docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md`](docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md) for the boundary reasoning behind both the family split and this placement.
 

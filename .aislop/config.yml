@@ -48,4 +48,3 @@ exclude:
   - completion-discipline/**
   - orchestration/**
   - working-method/**
-  - unity-batchmode-worktree/**

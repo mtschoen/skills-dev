@@ -7,6 +7,3 @@
 [submodule "working-method"]
 	path = working-method
 	url = ../skills-working-method.git
-[submodule "unity-batchmode-worktree"]
-	path = unity-batchmode-worktree
-	url = ../skills-unity-batchmode-worktree.git
