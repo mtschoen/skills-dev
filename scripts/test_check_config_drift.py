@@ -137,6 +137,43 @@ def test_tool_run_targets_skips_subcommand_and_flag_tokens():
     assert targets == [("dir", "scripts")]
 
 
+def test_tool_run_targets_ignores_tool_names_inside_a_pip_install_line():
+    """A shared `pip install ruff==... pytest ...` line must not be read as
+    an invocation of either tool - both names appear only as install
+    arguments, not as the command being run. Before anchoring the match to
+    the start of a command segment, this produced junk targets like
+    `('glob', '==0.15.15')` for ruff and a bare working-directory target for
+    pytest, which happened to be harmless only because it was permissive.
+    """
+    workflow = guard.parse_workflow_yaml(
+        "steps:\n  - run: pip install ruff==0.15.15 pytest pytest-cov\n"
+    )
+    assert guard.tool_run_targets(workflow, guard._RUFF_STEP) is None
+    assert guard.tool_run_targets(workflow, guard._PYTEST_STEP) is None
+
+
+def test_tool_run_targets_recognizes_python_dash_m_invocation():
+    workflow = guard.parse_workflow_yaml(
+        "steps:\n  - working-directory: agent-remote\n    run: python -m pytest tests -q\n"
+    )
+    assert guard.tool_run_targets(workflow, guard._PYTEST_STEP) == [
+        ("dir", "agent-remote/tests")
+    ]
+
+
+def test_tool_run_targets_only_matches_a_tool_leading_its_own_command_segment():
+    """`ruff`/`pytest` appearing after a `&&`/`;` still counts - only a tool
+    name buried mid-argument-list (the pip install shape) is excluded.
+    """
+    workflow = guard.parse_workflow_yaml(
+        "steps:\n  - run: echo start && ruff check evals\n"
+    )
+    targets = guard.tool_run_targets(
+        workflow, guard._RUFF_STEP, skip_tokens=guard.RUFF_SUBCOMMAND_TOKENS
+    )
+    assert targets == [("dir", "evals")]
+
+
 def test_path_is_covered_dir_target_matches_by_prefix():
     targets = [("dir", "hooks")]
     assert guard.path_is_covered(targets, "hooks/deploy.sh")
@@ -511,32 +548,51 @@ def test_check_code_without_ci_skips_when_lint_yml_missing(tmp_path):
     assert guard.check_code_without_ci(tmp_path, "repo") == []
 
 
-def test_check_code_without_ci_uses_nested_child_workflows_when_present(tmp_path):
+def test_check_code_without_ci_ignores_a_stale_nested_workflow_when_root_covers_the_file(
+    tmp_path,
+):
+    """A dead nested lint.yml must not cause a false positive.
+
+    Forges only execute .github/workflows/lint.yml at the repository root,
+    so coverage is judged against the root workflow only. Before the
+    root-only routing fix, a nested lint.yml one level below a submodule
+    root was consulted instead of the root whenever one existed - here that
+    nested file is stale/incomplete, which would have made a file the root
+    workflow genuinely covers look uncovered.
+    """
     repo = tmp_path / "family"
     _init_repo(repo)
     child = repo / "child"
     child.mkdir(parents=True)
     (child / "run.py").write_text("print('hi')\n", encoding="utf-8")
     (child / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
-    _write_lint_yml(repo, "jobs:\n  markdown:\n    steps: []\n")
     _write_lint_yml(
-        child,
-        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck deploy.sh\n",
+        repo,
+        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck child/deploy.sh\n",
     )
+    # Stale nested workflow: looks like real CI, covers nothing, never runs.
+    _write_lint_yml(child, "jobs:\n  markdown:\n    steps: []\n")
     _git("add", "-A", cwd=repo)
     _git("commit", "-m", "init", cwd=repo)
 
     assert guard.check_code_without_ci(tmp_path, "family") == []
 
 
-def test_check_code_without_ci_flags_nested_child_workflow_missing_steps(tmp_path):
+def test_check_code_without_ci_does_not_let_a_nested_workflow_mask_a_root_gap(tmp_path):
+    """A nested lint.yml that looks complete must not mask a real root gap.
+
+    The nested workflow here has full ruff+pytest coverage for child/'s
+    files, but it never runs - only the root lint.yml does, and the root
+    lint.yml has no python coverage at all. The finding must still fire.
+    """
     repo = tmp_path / "family"
     _init_repo(repo)
     child = repo / "child"
     child.mkdir(parents=True)
     (child / "run.py").write_text("print('hi')\n", encoding="utf-8")
     _write_lint_yml(repo, "jobs:\n  markdown:\n    steps: []\n")
-    _write_lint_yml(child, "jobs:\n  markdown:\n    steps: []\n")
+    # This nested workflow looks fully complete - it must not be trusted.
+    _write_lint_yml(child, "steps:\n  - run: ruff check .\n  - run: pytest\n")
     _git("add", "-A", cwd=repo)
     _git("commit", "-m", "init", cwd=repo)
 
@@ -556,6 +612,63 @@ def test_check_ruff_pin_checks_nested_child_workflows(tmp_path):
     assert len(errors) == 1
     assert errors[0].startswith("family/child/lint.yml:")
     assert "0.11.0" in errors[0]
+
+
+# --- check_nested_workflows ---
+
+
+def test_check_nested_workflows_flags_a_dead_nested_lint_yml(tmp_path):
+    repo = tmp_path / "family"
+    child = repo / "child"
+    _write_lint_yml(child, "jobs:\n  markdown:\n    steps: []\n")
+
+    errors = guard.check_nested_workflows(tmp_path, "family")
+    assert len(errors) == 1
+    assert "family/child:" in errors[0]
+    assert "child/.github/workflows/lint.yml" in errors[0]
+    assert "never runs" in errors[0]
+
+
+def test_check_nested_workflows_passes_with_no_nested_workflow(tmp_path):
+    repo = tmp_path / "family"
+    child = repo / "child"
+    child.mkdir(parents=True)
+    (child / "SKILL.md").write_text("# child\n", encoding="utf-8")
+
+    assert guard.check_nested_workflows(tmp_path, "family") == []
+
+
+def test_check_nested_workflows_ignores_dot_directories(tmp_path):
+    repo = tmp_path / "family"
+    dot_dir = repo / ".github"
+    _write_lint_yml(dot_dir, "jobs:\n  markdown:\n    steps: []\n")
+
+    assert guard.check_nested_workflows(tmp_path, "family") == []
+
+
+def test_check_nested_workflows_finds_every_nested_skill(tmp_path):
+    repo = tmp_path / "family"
+    _write_lint_yml(repo / "alpha", "jobs:\n  markdown:\n    steps: []\n")
+    _write_lint_yml(repo / "beta", "jobs:\n  markdown:\n    steps: []\n")
+
+    errors = guard.check_nested_workflows(tmp_path, "family")
+    assert len(errors) == 2
+    assert any("family/alpha:" in error for error in errors)
+    assert any("family/beta:" in error for error in errors)
+
+
+def test_check_submodule_includes_nested_workflow_findings(tmp_path):
+    repo = tmp_path / "alpha"
+    _init_repo(repo)
+    config = json.dumps(guard.CANONICAL_MODAL_CONFIG, indent=2)
+    (repo / ".markdownlint-cli2.jsonc").write_text(config, encoding="utf-8")
+    _write_lint_yml(repo, _GOOD_LINT_YML)
+    _write_lint_yml(repo / "child", "jobs:\n  markdown:\n    steps: []\n")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_submodule(tmp_path, "alpha")
+    assert any("never runs" in error for error in errors)
 
 
 # --- evaluate / main ---

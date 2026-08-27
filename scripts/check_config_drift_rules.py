@@ -254,6 +254,18 @@ def _classify_token(token: str) -> tuple[str, str]:
     return "dir", token
 
 
+# Shell command-separator tokens ("&&", "||", ";", "|"), used to split a run
+# line into individual command invocations before matching a tool name, so a
+# tool name is only read as an invocation when it leads its own command - not
+# whenever it appears later as an argument to something else on the line.
+_COMMAND_SEPARATORS = re.compile(r"&&|\|\||[;|]")
+
+# A `python -m <module>` / `python3 -m <module>` / `py -m <module>` prefix,
+# stripped before matching a tool name so `python -m pytest tests -q` is
+# still recognized as a pytest invocation.
+_MODULE_INVOCATION_PREFIX = re.compile(r"^(?:python3?|py)\s+-m\s+")
+
+
 def tool_run_targets(
     workflow: dict, command_pattern: re.Pattern, skip_tokens=frozenset()
 ):
@@ -270,6 +282,17 @@ def tool_run_targets(
     occur here, but mirrors shellcheck_targets' None-vs-empty contract:
     None means "no such step", a real list means "step(s) exist, check
     whether any of them covers this path").
+
+    A run line is split into individual `&&`/`||`/`;`/`|`-separated command
+    segments, and command_pattern is only accepted as a real invocation when
+    it matches at the START of a segment (after stripping an optional
+    `python -m` prefix) - not merely anywhere later in the line. Without this,
+    a shared install line like `pip install ruff==0.15.15 pytest` reads both
+    "ruff" and "pytest" as invocations of those tools and produces junk
+    targets (`('glob', '==0.15.15')`, a bare `('dir', <working_directory>)`
+    for "pytest") that happen to be harmless today only because they are
+    permissive, not because they are correct - the same shape of bug #36 is
+    about, just waiting for a real gap to hide behind one.
     """
     targets = []
     found = False
@@ -278,23 +301,28 @@ def tool_run_targets(
         if not isinstance(run, str):
             continue
         for line in run.splitlines():
-            match = command_pattern.search(line)
-            if not match:
-                continue
-            found = True
-            tokens = [
-                token
-                for token in line[match.end() :].split()
-                if not token.startswith("-") and token not in skip_tokens
-            ]
-            if not tokens:
-                targets.append(("dir", working_directory))
-                continue
-            for token in tokens:
-                kind, value = _classify_token(token)
-                targets.append(
-                    (kind, join_relative_directory(working_directory, value))
-                )
+            for segment in _COMMAND_SEPARATORS.split(line):
+                segment = segment.strip()
+                if not segment:
+                    continue
+                invocation = _MODULE_INVOCATION_PREFIX.sub("", segment, count=1)
+                match = command_pattern.match(invocation)
+                if not match:
+                    continue
+                found = True
+                tokens = [
+                    token
+                    for token in invocation[match.end() :].split()
+                    if not token.startswith("-") and token not in skip_tokens
+                ]
+                if not tokens:
+                    targets.append(("dir", working_directory))
+                    continue
+                for token in tokens:
+                    kind, value = _classify_token(token)
+                    targets.append(
+                        (kind, join_relative_directory(working_directory, value))
+                    )
     return targets if found else None
 
 
