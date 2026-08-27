@@ -23,6 +23,12 @@ assert_tree_matches() {
     fi
 }
 
+# Git Bash/MSYS hands POSIX paths to native Windows programs, which cannot read
+# them; cygpath converts. Elsewhere the path is already native.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s\n' "$1"; fi
+}
+
 # --- build the synthetic skill fixture ------------------------------------
 build_fixture() {
     local src="$WORK/src"
@@ -87,7 +93,14 @@ assert_install() {
 # ===== .sh under test =====
 SRC="$(build_fixture)"
 HOME_SH="$WORK/home_sh"; mkdir -p "$HOME_SH"
-HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
+# The installer resolves the harness home twice, and the two halves disagree on
+# Windows: install-skills.sh reads $HOME, while the hook step it shells out to
+# (scripts/manage_hooks.py) resolves Path.home(), which reads USERPROFILE and
+# ignores HOME. Sandboxing only HOME therefore leaves the hook step pointed at
+# the developer's real ~/.claude, where it both asserts against the wrong file
+# and writes hook registrations. Set both; USERPROFILE is inert on POSIX.
+HOME_SH_NATIVE="$(native_path "$HOME_SH")"
+HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_install ".sh" "$HOME_SH/.claude/skills"
 
 echo "[.sh] cleanup of prior-install cruft"
@@ -95,20 +108,20 @@ mkdir -p "$HOME_SH/.claude/skills/demoskill/reports" \
          "$HOME_SH/.claude/skills/demoskill/scripts/__pycache__"
 echo stale > "$HOME_SH/.claude/skills/demoskill/reports/old.txt"
 echo stale > "$HOME_SH/.claude/skills/demoskill/scripts/__pycache__/x.pyc"
-HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
+HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_absent ".sh: stale reports/ purged"  "$HOME_SH/.claude/skills/demoskill/reports"
 assert_exists ".sh: stale __pycache__ preserved" "$HOME_SH/.claude/skills/demoskill/scripts/__pycache__/x.pyc"
 
 echo "[.sh] manifest include (hooks/)"
 printf '%s\n' "hooks/" > "$SRC/demoskill/.skillpack"
 ( cd "$SRC/demoskill" && git add .skillpack && git -c user.email=t@t -c user.name=t commit -qm skillpack )
-HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
+HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_exists ".sh: hooks/ shipped via manifest" "$HOME_SH/.claude/skills/demoskill/hooks/h.sh"
 assert_absent ".sh: .skillpack NOT shipped"       "$HOME_SH/.claude/skills/demoskill/.skillpack"
 
 echo "[.sh] uncommitted working-tree edit installs"
 printf '%s\n' "EDITED-MARKER" >> "$SRC/demoskill/SKILL.md"   # not committed
-HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
+HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_contains ".sh: uncommitted edit propagated" "$HOME_SH/.claude/skills/demoskill/SKILL.md" "EDITED-MARKER"
 
 echo "[.sh] a failed apply is reported and exits nonzero"
@@ -120,8 +133,8 @@ stub_bin="$WORK/stubbin"; mkdir -p "$stub_bin"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$stub_bin/rsync"
 chmod +x "$stub_bin/rsync"
 printf '%s\n' "FAILURE-PATH-MARKER" >> "$SRC/demoskill/SKILL.md"
-fail_out="$(PATH="$stub_bin:$PATH" HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" \
-    bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill 2>&1)"
+fail_out="$(PATH="$stub_bin:$PATH" HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" \
+    SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill 2>&1)"
 fail_rc=$?
 if [ "$fail_rc" -ne 0 ]; then pass ".sh: failed apply exits nonzero"; else fail ".sh: failed apply exit $fail_rc"; fi
 case "$fail_out" in
@@ -135,7 +148,7 @@ esac
 
 echo "[.sh] hook registration with --hooks"
 add_hook_skill_fixture "$SRC"
-HOME="$HOME_SH" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude --hooks project-lock >/dev/null
+HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude --hooks project-lock >/dev/null
 assert_exists ".sh: project-lock hook shipped" "$HOME_SH/.claude/skills/project-lock/hooks/pre_tool_use.py"
 assert_exists ".sh: claude settings.json created" "$HOME_SH/.claude/settings.json"
 assert_contains ".sh: pre_tool_use registered in settings.json" "$HOME_SH/.claude/settings.json" "pre_tool_use.py"
@@ -265,7 +278,10 @@ if command -v cmd.exe >/dev/null 2>&1; then
     echo "[.bat] comparison infrastructure failure is fatal"
     stub_git="$WORK/stub_git"; mkdir -p "$stub_git"
     real_git_win="$(cygpath -w "$(command -v git)")"
-    printf '%s\r\n' '@echo off' 'if /i "%~1"=="diff" exit /b 2' \
+    # Match `diff` in any position: the installer prefixes global flags
+    # (`-c core.autocrlf=false`), so keying on %~1 alone silently stops
+    # intercepting and the real git runs, making this test vacuous.
+    printf '%s\r\n' '@echo off' 'for %%A in (%*) do if /i "%%~A"=="diff" exit /b 2' \
         "\"$real_git_win\" %*" 'exit /b %errorlevel%' > "$stub_git/git.cmd"
     touch -t 203101010101 "$SRC2/demoskill/SKILL.md"
     bat_compare_failure_out="$(PATH="$stub_git:$PATH" USERPROFILE="$HOME_BAT_WIN" \

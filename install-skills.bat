@@ -448,7 +448,14 @@ if not "!_after!"=="!_ln!" (
         set "_sym=+"
         set "_note=new"
     ) else (
-        git diff --no-index --quiet --no-ext-diff --no-textconv -- "!_st!\!_rel!" "!_de!\!_rel!" >nul 2>nul
+        rem The installer mirrors bytes, so the comparison must be byte-exact.
+        rem core.autocrlf=true (the Git for Windows default) makes git diff
+        rem normalize line endings and report a CRLF-vs-LF destination as
+        rem identical, so drift would never be re-synced. Pin it off here.
+        rem `call` because git may resolve to a git.cmd shim, and a batch file
+        rem invoking another batch file without `call` transfers control away
+        rem and never returns - this script would exit mid-run.
+        call git -c core.autocrlf=false diff --no-index --quiet --no-ext-diff --no-textconv -- "!_st!\!_rel!" "!_de!\!_rel!" >nul 2>nul
         set "_compare_rc=!errorlevel!"
         if "!_compare_rc!"=="0" exit /b 0
         if not "!_compare_rc!"=="1" (
@@ -483,7 +490,9 @@ if exist "!bs_src!\.skillpack" (
     )
 )
 rem Capture enumeration first: for /f does not expose the command's exit code.
-git -C "!bs_src!" ls-files > "!bs_listing!"
+rem `call` guards the same git.cmd-shim control transfer described above; without
+rem it a shim would end this script before the exit-code check below ever runs.
+call git -C "!bs_src!" ls-files > "!bs_listing!"
 set "bs_rc=!errorlevel!"
 if not "!bs_rc!"=="0" (
     echo git ls-files failed for !bs_src! ^(exit !bs_rc!^) 1>&2
