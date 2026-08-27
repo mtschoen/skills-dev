@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from scripts.hook_claude import find_registered_hook
+from scripts.hook_definitions import HookDefinition
 from scripts.manage_hooks import (
     DECISION_LATER,
     DECISION_NO,
@@ -132,6 +134,35 @@ class TestHookDefinitions:
         )
         assert not command_matches_hook("", defn, hook_path)
 
+    def test_build_hook_command_windows_bash(self, tmp_path):
+        defn_bash = HookDefinition(
+            skill_name="custom",
+            hook_name="test",
+            event="PreToolUse",
+            matcher=None,
+            script_relative_path_posix="hooks/test.sh",
+            script_relative_path_windows="hooks/test.sh",
+            interpreter_posix="bash",
+            interpreter_windows="bash",
+            description="test",
+        )
+        cmd_bash = build_hook_command(defn_bash, tmp_path / "test.sh", is_windows=True)
+        assert cmd_bash.startswith("bash ")
+
+    def test_command_matches_hook_posix_path_in_command(self, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "research-first")
+        hook_path = tmp_path / "custom" / "prompt-reminder.sh"
+        assert command_matches_hook(
+            f'bash "{str(hook_path).replace("\\", "/")}"',
+            defn,
+            hook_path,
+        )
+        assert command_matches_hook(
+            f'bash "{hook_path}"',
+            defn,
+            hook_path,
+        )
+
 
 class TestDecisionsStorage:
     def test_load_empty_or_missing(self, tmp_path):
@@ -167,6 +198,31 @@ class TestDecisionsStorage:
         assert "research-first/prompt_reminder" in loaded
         assert loaded["research-first/prompt_reminder"]["decision"] == DECISION_NO
         assert "updated_at" in loaded["research-first/prompt_reminder"]
+
+    def test_load_decisions_invalid_json(self, tmp_path):
+        decisions_file = tmp_path / DECISIONS_FILE_NAME
+        decisions_file.write_text("{ not json", encoding=UTF_8)
+        assert load_decisions(tmp_path) == {}
+
+    def test_load_decisions_non_dict(self, tmp_path):
+        decisions_file = tmp_path / DECISIONS_FILE_NAME
+        decisions_file.write_text(json.dumps("string"), encoding=UTF_8)
+        assert load_decisions(tmp_path) == {}
+        decisions_file.write_text(json.dumps({"decisions": "string"}), encoding=UTF_8)
+        assert load_decisions(tmp_path) == {}
+
+    def test_record_hook_decision_with_command(self, tmp_path):
+        record_hook_decision(
+            destination_root=tmp_path,
+            hook_key="project-lock/pre_tool_use",
+            decision=DECISION_YES,
+            harness=HARNESS_CLAUDE,
+            mode=MODE_WARN,
+            command="python test.py",
+        )
+        loaded = load_decisions(tmp_path)
+        assert loaded["project-lock/pre_tool_use"]["command"] == "python test.py"
+        assert loaded["project-lock/pre_tool_use"]["mode"] == MODE_WARN
 
 
 class TestClaudeSettingsManagement:
@@ -239,6 +295,76 @@ class TestClaudeSettingsManagement:
         assert second is False
         assert len(settings_data["hooks"]["UserPromptSubmit"]) == 1
 
+    def test_write_settings_dry_run(self, tmp_path):
+        settings_file = tmp_path / "settings.json"
+        write_claude_settings(settings_file, {"foo": "bar"}, dry_run=True)
+        assert not settings_file.exists()
+
+    def test_find_registered_hook_malformed_settings(self, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        hook_path = tmp_path / "project-lock" / "hooks" / "pre_tool_use.py"
+        assert find_registered_hook({"hooks": "not-a-dict"}, defn, hook_path) == (
+            False,
+            None,
+            None,
+        )
+        assert find_registered_hook(
+            {"hooks": {"PreToolUse": "not-a-list"}}, defn, hook_path
+        ) == (False, None, None)
+        assert find_registered_hook(
+            {"hooks": {"PreToolUse": ["not-a-dict"]}}, defn, hook_path
+        ) == (False, None, None)
+
+    def test_find_registered_hook_direct_command(self, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        hook_path = tmp_path / "project-lock" / "hooks" / "pre_tool_use.py"
+        cmd = f'python3 "{hook_path}"'
+        settings_data = {"hooks": {"PreToolUse": [{"command": cmd}]}}
+        found, cmd_str, entry = find_registered_hook(settings_data, defn, hook_path)
+        assert found is True
+        assert cmd_str == cmd
+        assert entry == {"command": cmd}
+
+    def test_register_hook_when_already_registered_updates_mode(self, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        hook_path = tmp_path / "project-lock" / "hooks" / "pre_tool_use.py"
+        settings_data = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "hooks": [{"command": f'python3 "{hook_path}"'}],
+                    }
+                ]
+            }
+        }
+        registered = register_hook_in_claude_settings(
+            settings_data=settings_data,
+            definition=defn,
+            hook_path=hook_path,
+            mode=MODE_DENY,
+        )
+        assert registered is False
+        assert settings_data.get("env", {}).get("PROJECT_LOCK_ENFORCE") == MODE_DENY
+
+    def test_register_hook_malformed_hooks_or_events(self, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        hook_path = tmp_path / "project-lock" / "hooks" / "pre_tool_use.py"
+        settings_data: dict[str, Any] = {
+            "hooks": "keep-this-malformed-value",
+            "unrelated": 17,
+        }
+        registered = register_hook_in_claude_settings(settings_data, defn, hook_path)
+        assert registered is False
+        assert settings_data == {
+            "hooks": "keep-this-malformed-value",
+            "unrelated": 17,
+        }
+
+        settings_data2: dict[str, Any] = {"hooks": {"PreToolUse": "not-a-list"}}
+        registered2 = register_hook_in_claude_settings(settings_data2, defn, hook_path)
+        assert registered2 is False
+        assert settings_data2 == {"hooks": {"PreToolUse": "not-a-list"}}
+
 
 class TestPruneDanglingHooks:
     def test_prune_removes_missing_hook_command(self, tmp_path):
@@ -269,6 +395,50 @@ class TestPruneDanglingHooks:
         assert "PreToolUse" in pruned[0]
         assert len(settings_data["hooks"]["PreToolUse"]) == 0
         assert len(settings_data["hooks"]["SessionStart"]) == 1
+
+    def test_prune_malformed_hooks_or_events(self, tmp_path):
+        assert prune_dangling_hooks_in_settings({"hooks": "bad"}, tmp_path) == []
+        assert (
+            prune_dangling_hooks_in_settings({"hooks": {"PreToolUse": "bad"}}, tmp_path)
+            == []
+        )
+
+    def test_prune_non_dict_entry_survives(self, tmp_path):
+        settings_data: dict[str, Any] = {"hooks": {"PreToolUse": ["string_entry"]}}
+        pruned = prune_dangling_hooks_in_settings(settings_data, tmp_path)
+        assert pruned == []
+        assert settings_data["hooks"]["PreToolUse"] == ["string_entry"]
+
+    def test_prune_non_hook_dict_entry_survives(self, tmp_path):
+        settings_data: dict[str, Any] = {
+            "hooks": {"PreToolUse": [{"custom_unrelated_field": "preserved"}]}
+        }
+        pruned = prune_dangling_hooks_in_settings(settings_data, tmp_path)
+        assert pruned == []
+        assert settings_data["hooks"]["PreToolUse"] == [
+            {"custom_unrelated_field": "preserved"}
+        ]
+
+    def test_prune_direct_command_entry(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        cmd = f'python3 "{skills_dir}/project-lock/hooks/pre_tool_use.py"'
+        settings_data = {"hooks": {"PreToolUse": [{"command": cmd}]}}
+        pruned = prune_dangling_hooks_in_settings(settings_data, skills_dir)
+        assert len(pruned) == 1
+        assert "PreToolUse" in pruned[0]
+        assert len(settings_data["hooks"]["PreToolUse"]) == 0
+
+    def test_prune_direct_command_survives_when_present(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        create_installed_skill_fixture(
+            skills_dir, "project-lock", ["hooks/pre_tool_use.py"]
+        )
+        cmd = f'python3 "{skills_dir}/project-lock/hooks/pre_tool_use.py"'
+        settings_data = {"hooks": {"PreToolUse": [{"command": cmd}]}}
+        pruned = prune_dangling_hooks_in_settings(settings_data, skills_dir)
+        assert len(pruned) == 0
+        assert len(settings_data["hooks"]["PreToolUse"]) == 1
 
 
 class TestEvaluationAndHarnesses:
@@ -392,6 +562,54 @@ class TestPromptUser:
         )
         assert decision == DECISION_QUIT
 
+    def test_prompt_project_lock_no(self, monkeypatch, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        monkeypatch.setattr("builtins.input", lambda _: "n")
+        decision, mode = prompt_user_for_hook(
+            defn, tmp_path / "hooks" / "pre_tool_use.py"
+        )
+        assert decision == DECISION_NO
+        assert mode is None
+
+    def test_prompt_project_lock_later(self, monkeypatch, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        monkeypatch.setattr("builtins.input", lambda _: "later")
+        decision, mode = prompt_user_for_hook(
+            defn, tmp_path / "hooks" / "pre_tool_use.py"
+        )
+        assert decision == DECISION_LATER
+        assert mode is None
+
+    def test_prompt_project_lock_quit(self, monkeypatch, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        monkeypatch.setattr("builtins.input", lambda _: "quit")
+        decision, mode = prompt_user_for_hook(
+            defn, tmp_path / "hooks" / "pre_tool_use.py"
+        )
+        assert decision == DECISION_QUIT
+        assert mode is None
+
+    def test_prompt_project_lock_unrecognized(self, monkeypatch, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        monkeypatch.setattr("builtins.input", lambda _: "unrecognized")
+        decision, mode = prompt_user_for_hook(
+            defn, tmp_path / "hooks" / "pre_tool_use.py"
+        )
+        assert decision == DECISION_LATER
+        assert mode is None
+
+    def test_prompt_project_lock_interrupt(self, monkeypatch, tmp_path):
+        defn = next(d for d in HOOK_DEFINITIONS if d.skill_name == "project-lock")
+        monkeypatch.setattr(
+            "builtins.input",
+            lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
+        )
+        decision, mode = prompt_user_for_hook(
+            defn, tmp_path / "hooks" / "pre_tool_use.py"
+        )
+        assert decision == DECISION_QUIT
+        assert mode is None
+
 
 class TestRunHookManagementFlow:
     def test_check_mode_returns_one_when_unregistered(self, tmp_path):
@@ -471,6 +689,48 @@ class TestRunHookManagementFlow:
         assert "UserPromptSubmit" in settings_data.get("hooks", {})
         assert "PreToolUse" not in settings_data.get("hooks", {})
 
+    def test_run_hook_management_unsupported_harness(self, tmp_path):
+        exit_code = run_hook_management(
+            destinations=[(HARNESS_GEMINI, tmp_path / ".gemini")]
+        )
+        assert exit_code == 0
+
+    def test_run_hook_management_declined_hook_skipped(self, tmp_path):
+        claude_skills = tmp_path / ".claude" / "skills"
+        create_installed_skill_fixture(
+            claude_skills, "research-first", ["hooks/prompt-reminder.sh"]
+        )
+        record_hook_decision(
+            claude_skills,
+            "research-first/prompt_reminder",
+            DECISION_NO,
+            HARNESS_CLAUDE,
+        )
+        exit_code = run_hook_management(
+            destinations=[(HARNESS_CLAUDE, claude_skills)],
+            check_mode=True,
+        )
+        assert exit_code == 0
+
+    def test_run_hook_management_quit_after_modifications_saves_settings(
+        self, monkeypatch, tmp_path
+    ):
+        claude_skills = tmp_path / ".claude" / "skills"
+        create_installed_skill_fixture(
+            claude_skills, "research-first", ["hooks/prompt-reminder.sh"]
+        )
+        create_installed_skill_fixture(
+            claude_skills, "wrap", ["hooks/session-end-reminder.sh"]
+        )
+        inputs = iter(["y", "q"])
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+        exit_code = run_hook_management(destinations=[(HARNESS_CLAUDE, claude_skills)])
+        assert exit_code == 0
+        settings_file = tmp_path / ".claude" / "settings.json"
+        assert settings_file.exists()
+        settings_data = json.loads(settings_file.read_text(encoding=UTF_8))
+        assert "UserPromptSubmit" in settings_data.get("hooks", {})
+
 
 class TestResolveDestinations:
     def test_explicit_flags(self, tmp_path):
@@ -509,6 +769,36 @@ class TestResolveDestinations:
         dests = resolve_destinations(args)
         assert len(dests) == 1
         assert dests[0][0] == HARNESS_CLAUDE
+
+    def test_resolve_destinations_with_hermes_home(self, monkeypatch, tmp_path):
+        hermes_custom = tmp_path / "custom_hermes"
+        monkeypatch.setenv("HERMES_HOME", str(hermes_custom))
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--claude", action="store_true")
+        parser.add_argument("--gemini", action="store_true")
+        parser.add_argument("--hermes", action="store_true")
+        parser.add_argument("--agents", action="store_true")
+        parser.add_argument("--all", action="store_true")
+        args = parser.parse_args(["--hermes"])
+        dests = resolve_destinations(args)
+        assert len(dests) == 1
+        assert dests[0] == (HARNESS_HERMES, hermes_custom / "skills")
+
+    def test_resolve_destinations_windows_localappdata(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.setattr("platform.system", lambda: "Windows")
+        appdata_dir = tmp_path / "AppData"
+        monkeypatch.setenv("LOCALAPPDATA", str(appdata_dir))
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--claude", action="store_true")
+        parser.add_argument("--gemini", action="store_true")
+        parser.add_argument("--hermes", action="store_true")
+        parser.add_argument("--agents", action="store_true")
+        parser.add_argument("--all", action="store_true")
+        args = parser.parse_args(["--hermes"])
+        dests = resolve_destinations(args)
+        assert len(dests) == 1
+        assert dests[0] == (HARNESS_HERMES, appdata_dir / "hermes" / "skills")
 
 
 class TestPromptEdgeCases:

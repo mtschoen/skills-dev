@@ -144,15 +144,17 @@ def register_hook_in_claude_settings(
                 env_dict["PROJECT_LOCK_ENFORCE"] = mode
         return False
 
+    if "hooks" in settings_data and not isinstance(settings_data["hooks"], dict):
+        return False
+
     hooks_section = settings_data.setdefault("hooks", {})
-    if not isinstance(hooks_section, dict):
-        hooks_section = {}
-        settings_data["hooks"] = hooks_section
+
+    if definition.event in hooks_section and not isinstance(
+        hooks_section[definition.event], list
+    ):
+        return False
 
     event_list = hooks_section.setdefault(definition.event, [])
-    if not isinstance(event_list, list):
-        event_list = []
-        hooks_section[definition.event] = event_list
 
     cmd_str = build_hook_command(definition, hook_path, is_windows=is_windows)
     new_entry: dict[str, Any] = {"hooks": [{"type": "command", "command": cmd_str}]}
@@ -203,7 +205,7 @@ def prune_dangling_hooks_in_settings(
                 surviving_entries.append(entry)
                 continue
 
-            sub_hooks = entry.get("hooks", [])
+            sub_hooks = entry.get("hooks")
             if isinstance(sub_hooks, list):
                 surviving_sub_hooks: list[Any] = []
                 for sub in sub_hooks:
@@ -215,12 +217,18 @@ def prune_dangling_hooks_in_settings(
                 if surviving_sub_hooks:
                     entry["hooks"] = surviving_sub_hooks
                     surviving_entries.append(entry)
-            else:
+            elif "command" in entry:
                 cmd_str = entry.get("command", "")
-                if cmd_str and is_command_dangling(cmd_str, destination_root):
+                if (
+                    isinstance(cmd_str, str)
+                    and cmd_str
+                    and is_command_dangling(cmd_str, destination_root)
+                ):
                     pruned_descriptions.append(f"{event_name}: {cmd_str}")
                 else:
                     surviving_entries.append(entry)
+            else:
+                surviving_entries.append(entry)
 
         hooks_section[event_name] = surviving_entries
 
