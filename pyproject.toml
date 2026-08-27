@@ -14,18 +14,10 @@ exclude = [
     "*/workspace/**",
     "*/evals/scenarios/**/workspace/**",
     # Submodules - each is a separate repo with its own lint gate (see .gitmodules).
-    "capture-idea/**",
-    "check-memory/**",
-    "find-task/**",
-    "maintaining-full-coverage/**",
-    "memory-cleanup/**",
+    "completion-discipline/**",
     "orchestration/**",
-    "progress-beacon/**",
-    "project-maintenance/**",
-    "promote-project/**",
-    "reconcile-tasks/**",
-    "unity-batchmode-worktree/**",
     "working-method/**",
+    "unity-batchmode-worktree/**",
 ]
 
 [tool.ruff.lint]

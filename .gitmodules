@@ -1,36 +1,12 @@
-[submodule "find-task"]
-	path = find-task
-	url = ../skills-find-task.git
-[submodule "fleet-orchestration"]
+[submodule "completion-discipline"]
+	path = completion-discipline
+	url = ../skills-completion-discipline.git
+[submodule "orchestration"]
 	path = orchestration
 	url = ../skills-orchestration.git
-[submodule "maintaining-full-coverage"]
-	path = maintaining-full-coverage
-	url = ../skills-completion-discipline.git
-[submodule "project-maintenance"]
-	path = project-maintenance
-	url = ../skills-project-maintenance.git
-[submodule "reconcile-tasks"]
-	path = reconcile-tasks
-	url = ../skills-reconcile-tasks.git
+[submodule "working-method"]
+	path = working-method
+	url = ../skills-working-method.git
 [submodule "unity-batchmode-worktree"]
 	path = unity-batchmode-worktree
 	url = ../skills-unity-batchmode-worktree.git
-[submodule "capture-idea"]
-	path = capture-idea
-	url = ../skills-capture-idea.git
-[submodule "progress-beacon"]
-	path = progress-beacon
-	url = ../skills-progress-beacon.git
-[submodule "promote-project"]
-	path = promote-project
-	url = ../skills-promote-project.git
-[submodule "research-first"]
-	path = working-method
-	url = ../skills-working-method.git
-[submodule "memory-cleanup"]
-	path = memory-cleanup
-	url = ../skills-memory-cleanup.git
-[submodule "check-memory"]
-	path = check-memory
-	url = ../skills-check-memory.git

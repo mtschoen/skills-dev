@@ -1,43 +1,45 @@
 # skills-dev - agent instructions
 
-This repo is the umbrella that ties together each skill's own submodule. Every top-level directory other than `.claude/`, `.github/`, `scripts/`, `tests/`, `LICENSE`, and `install-skills.*` is a git submodule pointing at that skill's own repository on GitHub.
+This repo is the umbrella that ties together three themed family submodules, each an independently adoptable set of related skills, plus a fourth submodule currently being retired. Every top-level directory other than `.claude/`, `.github/`, `ci/`, `docs/`, `hooks/`, `scripts/`, `tests/`, `LICENSE`, `pyproject.toml`, `uv.lock`, and `install-skills.*` is a git submodule pointing at a family repository on GitHub: `completion-discipline`, `orchestration`, `working-method`, and (until its retirement lands) `unity-batchmode-worktree`.
 
 ## Adding a new skill
 
-**Every new skill needs its own repo.** Don't add a new top-level directory directly to skills-dev - convert it to a submodule.
+**A new skill is a directory inside the right family submodule, not a new repo.** Don't add a new top-level directory directly to skills-dev - it goes one level down, inside an existing family.
 
 The workflow:
 
-1. Author the skill content locally in a temporary `<name>/` directory inside skills-dev.
-2. Create the remote repo on **both forges** - the `.gitmodules` relative URL resolves against whichever remote the umbrella was cloned from, so the child must exist everywhere the umbrella lives, or every recursive submodule init from the missing forge fails:
-   - GitHub: `gh repo create mtschoen/skills-<name> --public`.
-   - Gitea: push-to-create is disabled, so create `schoen/skills-<name>` via the API with the schoen token: `curl -X POST -H "Authorization: token $(cat ~/.gitea-token)" -H "Content-Type: application/json" -d '{"name":"skills-<name>","private":false,"auto_init":false}' https://gitea.fleet.sticktoitive.net/api/v1/user/repos`.
+1. Pick the family (see "Choosing a family" below).
+2. `mkdir <family>/<skill-name>` and author `SKILL.md` (plus `scripts/`, `references/`, `assets/`, `evals/` as needed) directly in the family submodule's working tree.
+3. Commit and push inside the family submodule: `git -C <family> add <skill-name> && git -C <family> commit -m "..." && git -C <family> push`.
+4. Confirm `install-skills.{sh,bat}` picks up the new skill via dry run: `./install-skills.sh -n <skill-name>`. (For fresh installs the dry-run output is just one line: `install <skill-name> -> ~/.claude/skills/<skill-name>`. That's normal - file-listing diffs only appear for already-installed skills.)
+5. Commit the advanced submodule pointer in skills-dev.
+6. Run `scripts/push-all.{sh,bat}`.
 
-   Both must be **public** - umbrella CI's `submodules: recursive` checkout clones sibling repos anonymously, so a private repo breaks the `markdown` and `validate-skills` jobs (the run token only covers skills-dev itself).
-3. Init the local dir as git, commit, and push. (Use the default git identity for direct main-branch commits.)
-4. Remove the local dir. **Windows gotcha:** `cd ..` first to avoid `Device or resource busy` on the cwd - and the handle can survive even that (observed 2026-08-20: contents deleted, empty dir stuck busy across retries). PowerShell `Remove-Item -Recurse -Force` clears it; clear it fully, because a leftover non-git dir makes `git submodule add` fail with "already exists and is not a valid git repo".
-5. Add as submodule. The `.gitmodules` **relative URL** `../skills-<name>.git` resolves against skills-dev's `origin`, which already has the initial commit from step 3:
+### Choosing a family
 
-   ```bash
-   git submodule add ../skills-<name>.git <name>
-   ```
+The three families are thesis-bound, not just topic buckets - each family's own `README.md` states its argument in full. As a quick router:
 
-   Do **not** run `git submodule sync` afterward - it can propagate the relative URL into the submodule's working-tree `origin` and break daily git ops. The working-tree `origin` should remain the absolute GitHub SSH URL set by `submodule add`.
-6. Confirm `install-skills.{sh,bat}` picks up the new skill via dry run: `./install-skills.sh -n <name>`. (For fresh installs the dry-run output is just one line: `install <name> -> ~/.claude/skills/<name>`. That's normal - file-listing diffs only appear for already-installed skills.)
-7. Commit the submodule pointer in skills-dev.
-8. Run `scripts/push-all.{sh,bat}`.
+- **`completion-discipline`** - the skill fires at a point an agent might declare something done (a change, a session, a handover) and forces a check before that claim stands.
+- **`working-method`** - the skill changes how an agent arrives at an answer while the work is still in progress: what it trusts, what it verifies, what habit it substitutes for a cheaper reflex.
+- **`orchestration`** - the skill is about the seam between agents, machines, or budgets: more than one agent, more than one host, or a quota/cost concern.
+
+Boundaries between the three are intentionally fuzzy at the edges; a skill sitting slightly awkwardly in a family is cheaper than inventing a fourth family for it. See `docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md` ("Target architecture") for the full reasoning and the current roster of each family.
+
+### A skill that belongs with its tool, not here
+
+A skill whose value collapses without a specific tool - it registers with a database that has no working by-hand fallback, or it enumerates a set with no defined source once the tool is absent - does not belong in this public set. It ships next to the tool instead, as `packages/<package>/skills/<skill-name>/` or `satellites/<satellite>/skills/<skill-name>/` inside the `schoen-lab` monorepo, following the precedent of `capture-idea`/`find-task`/`promote-project` (`packages/project_tracker/skills/`), `check-memory`/`memory-cleanup` (`packages/replica/skills/`), and `progress-beacon` (`satellites/agent-statusline/skills/`, alongside the `statusline` skill it complements). The test - "does the skill document a by-hand path that still delivers its value" - and worked examples for both directions live in the spec above, under "Skills that ship with their tool". Those skills are installed by the owning package's or satellite's own tooling (`onboard`'s `SkillsFeature` copies `statusline` directly, for example) rather than by this repo's `install-skills.sh`; `scripts/validate_skills.py` and `scripts/check_config_drift.py` can additionally validate them via an `--extra-skill-root <path>` flag, scanning `packages/*/skills/*` and `satellites/*/skills/*` under the given root, without them needing to be submodules here.
 
 ## Naming conventions
 
-- Repo names use the `skills-<name>` prefix. The skills-dev submodule path is the bare `<name>` (no prefix).
-- `.gitmodules` uses **relative URLs** (`../skills-<name>.git`), which resolve against whichever remote the umbrella was cloned from.
-- Each submodule's `origin` is its own GitHub repo over SSH (`git@github.com:mtschoen/skills-<name>.git`). `git submodule add` does NOT guarantee this: it sets the working-tree `origin` from the resolved relative URL, i.e. whatever forge the umbrella clone's `origin` points at (Gitea on chonkers). After adding, reset it - `git -C <name> remote set-url origin git@github.com:mtschoen/skills-<name>.git` - and add a `gitea` remote for the Gitea sibling. Don't run `git submodule sync` after manually fixing a submodule's `origin` URL - it can overwrite working-tree URLs from `.gitmodules` resolution.
+- Repo names use the `skills-<family-name>` prefix. The skills-dev submodule path is the bare `<family-name>` (no prefix). A skill's own directory name inside a family carries no prefix either.
+- `.gitmodules` uses **relative URLs** (`../skills-<family-name>.git`), which resolve against whichever remote the umbrella was cloned from.
+- Each family submodule's `origin` is its own GitHub repo over SSH (`git@github.com:mtschoen/skills-<family-name>.git`). `git submodule add` does NOT guarantee this: it sets the working-tree `origin` from the resolved relative URL, i.e. whatever forge the umbrella clone's `origin` points at (Gitea on chonkers). After adding a family submodule, reset it - `git -C <family-name> remote set-url origin git@github.com:mtschoen/skills-<family-name>.git` - and add a `gitea` remote for the Gitea sibling. Don't run `git submodule sync` after manually fixing a submodule's `origin` URL - it can overwrite working-tree URLs from `.gitmodules` resolution.
 - The submodule directories in skills-dev are **gitfiles**: `<sub>/.git` is a file reading `gitdir: ../../.git/modules/<sub>`, so config and refs live under `.git/modules/<sub>/`, not in the submodule directory. Two consequences worth knowing: `git rev-parse --git-common-dir` from a submodule points **outside** its own checkout, and `git worktree list --porcelain` reports that git directory rather than the working tree - so neither can be used to derive a submodule's checkout root. Walk up the filesystem for the nearest `.git` entry instead.
-- A skill ships extra top-level content (beyond `SKILL.md` + `scripts/` + `references/` + `assets/`) by listing it in a `.skillpack` file at the skill's repo root. Current users: `cost-estimator` (`REPORT_TEMPLATE.md`), `progress-beacon` (`hooks/`), `project-lock` (`hooks/`), `research-first` (`hooks/`), `wrap` (`hooks/`). The `.skillpack` file is itself never installed.
+- A skill ships extra top-level content (beyond `SKILL.md` + `scripts/` + `references/` + `assets/`) by listing it in a `.skillpack` file at the skill's own root. Current users: `cost-estimator` (`REPORT_TEMPLATE.md`), `project-lock` (`hooks/`), `research-first` (`hooks/`), `wrap` (`hooks/`). The `.skillpack` file is itself never installed.
 
 ## Layout
 
-Per-skill repos use the **root layout**: `SKILL.md` at the repo root, plus `evals/`, `README.md`, and `workspace/` (gitignored). The installer (`install-skills.{sh,bat}`) ships only **git-tracked** files (`git ls-files`), filtered to a **top-level allowlist**: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root (one entry per line, `#` comments). Shipping tracked-only means generated junk (`__pycache__`, `.pytest_cache`) can never leak; the allowlist means dev dirs (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`) are excluded by omission. Each install mirrors a clean staging tree into the destination, so files left by older installs are removed. Skill validation is delegated to the official Agent Skills validator: CI runs `agentskills validate` (pinned `skills-ref==0.1.1`) over every `.gitmodules` skill via `scripts/validate_skills.py`, which keeps the fleet-level anti-vacuous / WIP-skip guards plus a portability guard (no tracked file in the umbrella or any skill - dev files included - may reference local-only paths such as user memory notes or machine-specific home dirs; deny patterns and exemptions live in `validate_skills.py`); markdownlint covers skill prose.
+Each skill uses the **root layout**: `SKILL.md` at the skill's own root, plus `evals/`, `README.md`, and `workspace/` (gitignored), whether that skill sits two levels down under a family submodule here or as a plain subdirectory under `packages/*/skills/*` or `satellites/*/skills/*` elsewhere. The installer (`install-skills.{sh,bat}`) ships only **git-tracked** files (`git ls-files`), filtered to a **top-level allowlist**: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its own root (one entry per line, `#` comments). Shipping tracked-only means generated junk (`__pycache__`, `.pytest_cache`) can never leak; the allowlist means dev dirs (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`) are excluded by omission. Each install mirrors a clean staging tree into the destination, so files left by older installs are removed. Skill validation is delegated to the official Agent Skills validator: CI runs `agentskills validate` (pinned `skills-ref==0.1.1`) over every skill via `scripts/validate_skills.py`, which discovers skills up to one level under each `.gitmodules`-declared family submodule and keeps the fleet-level anti-vacuous / WIP-skip guards plus a portability guard (no tracked file in the umbrella or any skill - dev files included - may reference local-only paths such as user memory notes or machine-specific home dirs; deny patterns and exemptions live in `validate_skills.py`); markdownlint covers skill prose.
 
 **Mid-session skill staleness is partial.** The skills *listing* (names and descriptions) is fixed at session start, so frontmatter changes need a new session. The skill *body* is not: an explicit `Skill` tool invocation reads the installed `SKILL.md` at call time, so an edit-install-invoke loop within one session is a valid way to test body changes - verified 2026-08-05, when a wrap invocation returned text edited minutes earlier. A contrary observation on 2026-08-04 (reinstalled wrap, invoked it, got the pre-change version) was real but has not reproduced, so verify with `grep` against the installed file rather than assuming either behaviour. Related trap with the same symptom and no error: auditing a skill you forgot to install at all.
 
@@ -99,7 +101,7 @@ Skills reference each other and external tools at three levels:
 
 - **Hard dependency** - the skill is meaningless without it (e.g. fleet-orchestration requires superpowers:dispatching-parallel-agents; memory-cleanup requires the replica CLI). Declare it explicitly: name it in the frontmatter description ("Requires ...") and give an install pointer or link in a Requirements section. No fallback text needed.
 - **Soft dependency** - the skill works alone but is enhanced by another skill or MCP server. Reference it conditionally ("if X is installed ...") and state the standalone fallback where one is cheap to describe. Do not contort the text just for isolation's sake.
-- **Suite** - a declared group designed to be installed together. Members may reference each other plainly; each member's README notes the suite membership once. Current suites: the completion suite = maintaining-full-coverage, smoke-test, docs-update, escalate-over-shortcut, wrap.
+- **Suite** - a declared group designed to be installed together. Members may reference each other plainly; each member's README notes the suite membership once. Current suites: the completion suite = the full `completion-discipline` family (`maintaining-full-coverage`, `smoke-test`, `docs-update`, `escalate-over-shortcut`, `wrap`, `reconcile-tasks`, `project-maintenance`).
 
 External tools get a link on first mention in each skill: project-tracker (part of <https://github.com/mtschoen/schoen-lab>), git-wizard (<https://github.com/mtschoen/git-wizard>), aislop (<https://github.com/scanaislop/aislop/>), replica (part of <https://github.com/mtschoen/schoen-lab>), agent-walker (<https://github.com/mtschoen/agent-walker>), pi (<https://pi.dev/>).
 

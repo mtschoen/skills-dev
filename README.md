@@ -1,10 +1,20 @@
 # skills-dev
 
-A workspace for developing agent skills - reusable capabilities for AI coding assistants including Codex, opencode, [Claude Code](https://claude.com/claude-code), Antigravity, and Hermes. Each top-level directory is a git submodule pointing at that skill's own repository; this repo is the umbrella that ties them together and provides install + sync tooling.
+A workspace for developing agent skills - reusable capabilities for AI coding assistants including Codex, opencode, [Claude Code](https://claude.com/claude-code), Antigravity, and Hermes. Each top-level directory is a git submodule pointing at a family repository - a themed, independently adoptable set of related skills living as plain subdirectories - and this repo is the umbrella that ties the families together and provides install + sync tooling.
 
 ## What's here
 
-The skills fall into a few broad families. **Completion discipline** - gates an agent runs before calling work done; `maintaining-full-coverage` (hold the coverage/lint bar, never lower it silently) and `wrap` (the session-closing ritual: externalize memory, leave every repo clean) are the headliners. **Working method** - habits applied while working: research before building, small runnable spikes over doc-divination, evidence-based pushback on risky asks. **Orchestration** - multi-agent and multi-machine patterns: reviewing parallel pipelines at merge points, delegating to remote hosts, cooperative project locks. **Project lifecycle** - capturing ideas, promoting them into real repos, finding and reconciling tasks; several of these integrate with the [project-tracker](https://github.com/mtschoen/schoen-lab) dashboard when it's installed and degrade gracefully when it isn't. The set ebbs and flows - each directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
+Three family submodules, each with its own thesis for why its skills belong together (see each family's own `README.md` for the full argument):
+
+**`completion-discipline`** (7 skills) - what an agent owes the work at the point it stops: `maintaining-full-coverage` (hold the coverage/lint bar, never lower it silently), `smoke-test`, `docs-update`, `escalate-over-shortcut`, `wrap` (the session-closing ritual: externalize memory, leave every repo clean), `reconcile-tasks`, `project-maintenance`.
+
+**`working-method`** (6 skills) - habits applied while the work is happening, not after it: `research-first`, `running-spikes`, `pushback`, `effective-refactor`, `fast-tests`, `using-a-debugger`.
+
+**`orchestration`** (6 skills) - what changes when work outgrows one agent, one machine, or one budget: `agent-remote`, `external-harness-routing`, `fleet-orchestration`, `review-in-parallel-pipelines`, `project-lock`, `cost-estimator`.
+
+`unity-batchmode-worktree` is a fourth submodule, currently being retired: its warm-worktree-pool protocol is moving into `fleet-orchestration` (genericized beyond Unity) and its Unity-specific remainder is moving to the projects that use it. Each skill directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
+
+A skill whose value collapses without a specific tool ships alongside that tool instead of living here: `capture-idea`, `find-task`, and `promote-project` at `packages/project_tracker/skills/`, `check-memory` and `memory-cleanup` at `packages/replica/skills/`, and `progress-beacon` at `satellites/agent-statusline/skills/`, all in the [schoen-lab](https://github.com/mtschoen/schoen-lab) monorepo. See [`docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md`](docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md) for the boundary reasoning behind both the family split and this placement.
 
 ## Cloning
 
@@ -28,7 +38,7 @@ This lives in `.git/config` and **cannot be committed**, so run it once per clon
 
 ## Installing skills
 
-`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. **Author skills in their own source repositories** (the top-level submodules in this umbrella); installed copies are generated mirrors and should not be edited directly.
+`install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. **Author skills in their family repository** (the top-level submodules in this umbrella); installed copies are generated mirrors and should not be edited directly.
 
 `~/.agents/skills/` is the canonical runtime location read natively by **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills)). Claude Code and Antigravity use their own runtime locations, so the installer can mirror the same tracked skill content to them. Hermes is an active destination too: it uses `<Hermes home>/skills`.
 
@@ -56,7 +66,7 @@ Supported destination flags:
 | `--hermes` | `<Hermes home>/skills` (generated Hermes mirror) |
 | `--all` | all of the above; may create missing homes |
 
-Each skill repo has `SKILL.md` at its root. The installer ships only **git-tracked** files, filtered to a top-level allowlist: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its repo root. Dev-only content (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.) is excluded by omission, and generated junk can never leak because untracked files are never shipped.
+Each skill directory has `SKILL.md` at its root. The installer ships only **git-tracked** files, filtered to a top-level allowlist: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its own root. Dev-only content (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.) is excluded by omission, and generated junk can never leak because untracked files are never shipped.
 
 The installer copies skill **files** only - it does not install any external runtime tooling a skill needs. Some skills have such prerequisites (e.g. `using-a-debugger` needs a debugger binary like netcoredbg/gdb/lldb/cdb plus Python 3; `cost-estimator` needs its data sources). Each such skill documents its prerequisites in its own `references/` (for `using-a-debugger`, see `references/tooling-setup.md`) and README - check there after installing.
 
@@ -86,18 +96,18 @@ Claude Code hooks are wired into `~/.claude/settings.json` (with automatic backu
 
 ```text
 skills-dev/
-├── <skill-name>/        # submodule -> skills-<skill-name>.git
-│   ├── SKILL.md         # the skill itself
-│   ├── evals/           # eval harness (dev-only, not installed)
-│   └── ...
-├── install-skills.sh    # install -> selected runtime destinations
+├── <family-name>/        # submodule -> skills-<family-name>.git
+│   ├── <skill-name>/     # SKILL.md + scripts/ + references/ + assets/ + evals/ (dev-only)
+│   │   └── SKILL.md      # the skill itself
+│   └── ...                # one directory per skill in the family
+├── install-skills.sh     # install -> selected runtime destinations
 ├── install-skills.bat
 └── scripts/
     ├── push-all.sh
     └── pull-all.sh
 ```
 
-Submodule URLs in `.gitmodules` are relative (`../skills-<name>.git`), resolving against whichever remote the umbrella was cloned from.
+Submodule URLs in `.gitmodules` are relative (`../skills-<family-name>.git`), resolving against whichever remote the umbrella was cloned from.
 
 ## License
 

@@ -45,26 +45,7 @@ exclude:
   - build
   - .git
   - "**/workspace/**"
-  - agent-remote/**
-  - capture-idea/**
-  - cost-estimator/**
-  - docs-update/**
-  - escalate-over-shortcut/**
-  - fast-tests/**
-  - find-task/**
-  - fleet-orchestration/**
-  - maintaining-full-coverage/**
-  - memory-cleanup/**
-  - progress-beacon/**
-  - project-lock/**
-  - project-maintenance/**
-  - promote-project/**
-  - pushback/**
-  - reconcile-tasks/**
-  - research-first/**
-  - review-in-parallel-pipelines/**
-  - running-spikes/**
-  - smoke-test/**
+  - completion-discipline/**
+  - orchestration/**
+  - working-method/**
   - unity-batchmode-worktree/**
-  - using-a-debugger/**
-  - wrap/**
