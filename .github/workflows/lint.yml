@@ -108,8 +108,37 @@ jobs:
       - name: shellcheck
         run: shellcheck scripts/*.sh install-skills.sh tests/test-install.sh
       # The suite was shellchecked but never executed, so installer regressions
-      # could only be caught by hand. The .bat half self-skips without cmd.exe.
+      # could only be caught by hand. The .bat half self-skips without cmd.exe;
+      # install-test-windows below is what covers it.
       - name: install integration test
+        run: bash tests/test-install.sh
+
+  install-test-windows:
+    # tests/test-install.sh gates its .bat half on cmd.exe being present, so the
+    # ubuntu run above silently exercises only the .sh half. Everything
+    # Windows-specific - robocopy mirroring, the git-diff drift comparison, and
+    # hook registration (which resolves the home from USERPROFILE, not HOME) -
+    # was therefore never covered by CI, and three of those assertions had
+    # rotted into failures or vacuous passes before this job existed.
+    #
+    # This also covers the other half of one branch: install-skills.sh prefers
+    # rsync and falls back to `cp -a`. The ubuntu runner has rsync; Git Bash on
+    # Windows does not, so the fallback is only ever exercised here.
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      # The hook-registration assertions need python on PATH; without it the
+      # installer prints "--hooks: skipped" and those assertions fail with no
+      # hint as to why. Fail here instead, with the reason.
+      - name: verify python is on PATH
+        shell: bash
+        run: command -v python || command -v python3
+      - name: install integration test
+        shell: bash
         run: bash tests/test-install.sh
 
   aislop:

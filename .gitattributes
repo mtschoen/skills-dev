@@ -2,3 +2,10 @@
 # materializes it with CRLF (a CRLF shebang can break execution via git's hook
 # runner). core.hooksPath points git at hooks/ (see CLAUDE.md "Linting").
 hooks/pre-commit text eol=lf
+
+# Same reason, every bash script: with core.autocrlf=true (the Git for Windows
+# default) a Windows checkout materializes these with CRLF, and bash then dies
+# on the stray \r at the end of every line. That would break the Windows CI job
+# running tests/test-install.sh, and it is also what makes shellcheck report
+# SC1017 on every line of a Windows working tree.
+*.sh text eol=lf
