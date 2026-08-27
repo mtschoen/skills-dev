@@ -56,10 +56,15 @@ from scripts.check_config_drift_rules import (
     FLEET_RUFF_PIN,
     MODAL_CONFIG_EXCEPTIONS,
     PROJECT_LOCK_CONFIG,
+    RUFF_SUBCOMMAND_TOKENS,
     expected_markdownlint_config,
     is_fixture_path,
+    parse_workflow_yaml,
+    path_is_covered,
     ruff_pin_errors_in_text,
+    shellcheck_targets,
     strip_jsonc_comments,
+    tool_run_targets,
 )
 
 __all__ = [
@@ -69,6 +74,7 @@ __all__ = [
     "FLEET_RUFF_PIN",
     "MODAL_CONFIG_EXCEPTIONS",
     "PROJECT_LOCK_CONFIG",
+    "RUFF_SUBCOMMAND_TOKENS",
     "_DEFAULT_ENCODING",
     "_EXTRA_SKILL_ROOT_GLOBS",
     "_MARKDOWNLINT_STEP",
@@ -95,9 +101,13 @@ __all__ = [
     "is_fixture_path",
     "main",
     "parse_submodule_paths",
+    "parse_workflow_yaml",
+    "path_is_covered",
     "resolve_skill_directory",
     "ruff_pin_errors_in_text",
+    "shellcheck_targets",
     "strip_jsonc_comments",
+    "tool_run_targets",
     "tracked_files",
 ]
 
@@ -200,8 +210,60 @@ def check_lint_workflow(repo_root: Path, path):
     return errors
 
 
+def _route_to_workflow(skill_dir: Path, path, tracked_path: str):
+    """Return (workflow_path, group_label, relative_path) for one tracked file.
+
+    `tracked_path` is resolved against the tracked path's own top-level
+    directory's lint.yml when one exists one level down (a nested skill with
+    its own CI), else against the skill's own root lint.yml.
+    `relative_path` is the file's path relative to whichever workflow's
+    checkout root applies (with the nested skill's own directory prefix
+    stripped off in the nested case, since that workflow checks out that
+    directory as its own root).
+    """
+    top_segment = tracked_path.split("/", 1)[0] if "/" in tracked_path else ""
+    child_workflow = (
+        skill_dir / top_segment / ".github" / "workflows" / "lint.yml"
+        if top_segment
+        else None
+    )
+    if child_workflow and child_workflow.is_file():
+        group_label = f"{path}/{top_segment}" if path else top_segment
+        relative_path = tracked_path.split("/", 1)[1]
+        return child_workflow, group_label, relative_path
+
+    root_workflow = skill_dir / ".github" / "workflows" / "lint.yml"
+    group_label = str(path) if path else ""
+    return root_workflow, group_label, tracked_path
+
+
 def check_code_without_ci(repo_root: Path, path):
-    """Return drift errors for untested/unlinted code in one repo."""
+    """Return drift errors for untested/unlinted code in one repo.
+
+    Beyond checking that a ruff/pytest/shellcheck step merely appears
+    somewhere in the applicable lint.yml, this resolves each step's actual
+    scope (scandir/path/explicit arguments, resolved against each step's own
+    working-directory) against the tracked files it is meant to cover, so a
+    step scoped to the wrong directory - the shape of schoen-lab
+    skills-dev#36, where `scandir: './hooks'` scanned an empty directory
+    while a real `hooks/` lived one level deeper - is caught instead of
+    silently passing because the tool's name appears in the file somewhere.
+
+    ruff and shellcheck get this exact-path treatment: both are static
+    scanners that only act on files they are literally pointed at, so
+    "does a configured target actually reach this file" is a sound check.
+    pytest does not get it: a test file commonly targets code that lives
+    outside the directory named on the pytest command line (`pytest tests/`
+    routinely exercises code under a sibling `src/` or `evals/` via imports),
+    so requiring the pytest command to name every covered file's own
+    directory would flag that completely idiomatic layout as drift. pytest
+    keeps the coarser "does some pytest step exist in the applicable
+    lint.yml" bar - which, combined with ruff's precise check, still catches
+    the case this guard exists to catch: deleting one skill's entire CI
+    block out of a shared lint.yml still leaves that skill's files unscanned
+    by ruff, even though other skills' "ruff"/"pytest" text remains in the
+    file.
+    """
     skill_dir = resolve_skill_directory(repo_root, path)
     root_workflow_path = skill_dir / ".github" / "workflows" / "lint.yml"
     if not root_workflow_path.is_file():
@@ -213,51 +275,81 @@ def check_code_without_ci(repo_root: Path, path):
     if not py_files and not sh_files:
         return []
 
-    # Group files by their applicable lint.yml (either a child directory's lint.yml if present, or the root lint.yml).
-    groups = {}
-    for f in py_files:
-        top_segment = f.split("/")[0] if "/" in f else ""
-        child_wf = (
-            skill_dir / top_segment / ".github" / "workflows" / "lint.yml"
-            if top_segment
-            else None
-        )
-        if child_wf and child_wf.is_file():
-            key = (child_wf, f"{path}/{top_segment}" if path else top_segment)
-        else:
-            key = (root_workflow_path, str(path) if path else "")
-        groups.setdefault(key, {"py": [], "sh": []})["py"].append(f)
+    workflow_cache = {}
 
-    for f in sh_files:
-        top_segment = f.split("/")[0] if "/" in f else ""
-        child_wf = (
-            skill_dir / top_segment / ".github" / "workflows" / "lint.yml"
-            if top_segment
-            else None
-        )
-        if child_wf and child_wf.is_file():
-            key = (child_wf, f"{path}/{top_segment}" if path else top_segment)
-        else:
-            key = (root_workflow_path, str(path) if path else "")
-        groups.setdefault(key, {"py": [], "sh": []})["sh"].append(f)
+    def load_workflow(workflow_path: Path) -> dict:
+        if workflow_path not in workflow_cache:
+            text = workflow_path.read_text(encoding=_DEFAULT_ENCODING)
+            workflow_cache[workflow_path] = parse_workflow_yaml(text)
+        return workflow_cache[workflow_path]
+
+    def group(tracked_paths):
+        grouped = {}
+        for tracked_path in tracked_paths:
+            workflow_path, group_label, relative_path = _route_to_workflow(
+                skill_dir, path, tracked_path
+            )
+            grouped.setdefault((workflow_path, group_label), []).append(
+                (tracked_path, relative_path)
+            )
+        return grouped
 
     errors = []
-    for (wf_path, label), file_dict in sorted(
-        groups.items(), key=lambda item: item[0][1]
+
+    for (workflow_path, group_label), scoped_py in sorted(
+        group(py_files).items(), key=lambda item: item[0][1]
     ):
-        text = wf_path.read_text(encoding=_DEFAULT_ENCODING)
-        scoped_py = file_dict["py"]
-        scoped_sh = file_dict["sh"]
-        display_label = label if label else str(path)
-        if scoped_py and not (_RUFF_STEP.search(text) and _PYTEST_STEP.search(text)):
+        workflow = load_workflow(workflow_path)
+        display_label = group_label if group_label else str(path)
+        if tool_run_targets(workflow, _PYTEST_STEP) is None:
             errors.append(
                 f"{display_label}: {len(scoped_py)} tracked .py file(s) outside fixture dirs "
-                f"(e.g. {scoped_py[0]}) but lint.yml has no ruff+pytest step"
+                f"(e.g. {scoped_py[0][0]}) but lint.yml has no pytest step"
             )
-        if scoped_sh and not _SHELLCHECK_STEP.search(text):
+            continue
+        ruff_targets = tool_run_targets(
+            workflow, _RUFF_STEP, skip_tokens=RUFF_SUBCOMMAND_TOKENS
+        )
+        if ruff_targets is None:
+            errors.append(
+                f"{display_label}: {len(scoped_py)} tracked .py file(s) outside fixture dirs "
+                f"(e.g. {scoped_py[0][0]}) but lint.yml has no ruff step"
+            )
+            continue
+        uncovered = [
+            tracked_path
+            for tracked_path, relative_path in scoped_py
+            if not path_is_covered(ruff_targets, relative_path)
+        ]
+        if uncovered:
+            errors.append(
+                f"{display_label}: {len(uncovered)} tracked .py file(s) outside fixture dirs "
+                f"(e.g. {uncovered[0]}) not scanned by any configured ruff step "
+                "(lint.yml has a ruff step, but it does not check this path)"
+            )
+
+    for (workflow_path, group_label), scoped_sh in sorted(
+        group(sh_files).items(), key=lambda item: item[0][1]
+    ):
+        workflow = load_workflow(workflow_path)
+        display_label = group_label if group_label else str(path)
+        targets = shellcheck_targets(workflow)
+        if targets is None:
             errors.append(
                 f"{display_label}: {len(scoped_sh)} tracked .sh file(s) outside fixture dirs "
-                f"(e.g. {scoped_sh[0]}) but lint.yml has no shellcheck step"
+                f"(e.g. {scoped_sh[0][0]}) but lint.yml has no shellcheck step"
+            )
+            continue
+        uncovered = [
+            tracked_path
+            for tracked_path, relative_path in scoped_sh
+            if not path_is_covered(targets, relative_path)
+        ]
+        if uncovered:
+            errors.append(
+                f"{display_label}: {len(uncovered)} tracked .sh file(s) outside fixture dirs "
+                f"(e.g. {uncovered[0]}) not covered by any configured shellcheck "
+                "scandir/path (lint.yml has a shellcheck step, but it does not scan this file)"
             )
     return errors
 

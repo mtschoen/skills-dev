@@ -1,6 +1,9 @@
 """Rules, canonical configurations, and text invariants for check_config_drift."""
 
+import fnmatch
 import re
+
+import yaml
 
 # The shape every modal skill repo's .markdownlint-cli2.jsonc should have unless
 # listed in MODAL_CONFIG_EXCEPTIONS below. MD013 (line length) and MD060 (table
@@ -151,3 +154,189 @@ def ruff_pin_errors_in_text(label: str, text: str) -> list[str]:
                 f"fleet pin is {FLEET_RUFF_PIN}"
             )
     return errors
+
+
+# Ruff subcommands, skipped when reading a `ruff <subcommand> <paths>` run
+# line so the subcommand word itself is not mistaken for a path argument.
+RUFF_SUBCOMMAND_TOKENS = frozenset({"check", "format"})
+
+
+def parse_workflow_yaml(text: str) -> dict:
+    """Parse a GitHub/Gitea Actions workflow file into a plain dict.
+
+    Returns an empty dict for an empty or non-mapping document so callers can
+    treat "no jobs" and "unparseable" uniformly as "nothing configured" rather
+    than crashing on a workflow file that is present but nearly empty.
+    """
+    document = yaml.safe_load(text)
+    return document if isinstance(document, dict) else {}
+
+
+def _normalize_directory(value) -> str:
+    """Normalize a working-directory value to a plain, slash-free-edges path.
+
+    "", ".", and "./" all mean "the checkout root" and normalize to "".
+    """
+    text = str(value or "").strip()
+    if text in ("", ".", "./"):
+        return ""
+    if text.startswith("./"):
+        text = text[2:]
+    return text.strip("/")
+
+
+def join_relative_directory(working_directory: str, value: str) -> str:
+    """Join a step's working-directory with a path/scandir value it names."""
+    directory = _normalize_directory(value)
+    working_directory = _normalize_directory(working_directory)
+    if not directory:
+        return working_directory
+    if not working_directory:
+        return directory
+    return f"{working_directory}/{directory}"
+
+
+def iter_workflow_steps(workflow: dict):
+    """Yield (working_directory, step) for every step in a parsed workflow.
+
+    working_directory is normalized (see _normalize_directory) and resolved
+    from the step's own `working-directory`, falling back to its job's
+    `defaults.run.working-directory`, falling back to the workflow-level
+    default. A workflow with no `jobs:` mapping but a bare top-level
+    `steps:` list (used by this guard's own test fixtures) is treated as one
+    implicit job, so callers do not need real GitHub Actions job scaffolding
+    to exercise this against a step list directly.
+    """
+    if not isinstance(workflow, dict):
+        return
+    workflow_working_directory = _normalize_directory(
+        ((workflow.get("defaults") or {}).get("run") or {}).get("working-directory")
+    )
+    jobs = workflow.get("jobs")
+    if isinstance(jobs, dict):
+        job_specs = list(jobs.values())
+    elif isinstance(workflow.get("steps"), list):
+        job_specs = [workflow]
+    else:
+        job_specs = []
+    for job in job_specs:
+        if not isinstance(job, dict):
+            continue
+        job_working_directory = _normalize_directory(
+            ((job.get("defaults") or {}).get("run") or {}).get(
+                "working-directory", workflow_working_directory
+            )
+        )
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            working_directory = _normalize_directory(
+                step.get("working-directory", job_working_directory)
+            )
+            yield working_directory, step
+
+
+def _classify_token(token: str) -> tuple[str, str]:
+    """Classify a command-line path argument as a directory or a file/glob.
+
+    A bare `.` means "the whole working directory" (a directory target). A
+    token holding a glob character, or whose final path segment has a `.`
+    (an extension - `deploy.sh`, `scripts/*.sh`), is a specific file/glob
+    (matched by exact/glob comparison). Anything else (`evals`, `tests/`,
+    `scripts/`) is a directory a tool would recurse into (matched by prefix).
+    """
+    if token in (".", "./"):
+        return "dir", token
+    if any(character in token for character in "*?["):
+        return "glob", token
+    if "." in token.rsplit("/", 1)[-1]:
+        return "glob", token
+    return "dir", token
+
+
+def tool_run_targets(
+    workflow: dict, command_pattern: re.Pattern, skip_tokens=frozenset()
+):
+    """Return the scan targets a tool's `run:` invocations resolve to, or None.
+
+    Each target is a `("dir", path)` pair (matched by prefix against a
+    tracked file's path) or a `("glob", pattern)` pair (matched by
+    fnmatch), resolved relative to the workflow's checkout root using each
+    step's working-directory. A bare invocation with no non-flag/non-skipped
+    arguments (`pytest`, `ruff check .`) falls back to a directory target at
+    the step's own working-directory, since that is the tree it implicitly
+    covers. Returns None when command_pattern never matches any `run:` text
+    in the workflow at all, distinct from an empty target list (which cannot
+    occur here, but mirrors shellcheck_targets' None-vs-empty contract:
+    None means "no such step", a real list means "step(s) exist, check
+    whether any of them covers this path").
+    """
+    targets = []
+    found = False
+    for working_directory, step in iter_workflow_steps(workflow):
+        run = step.get("run") or ""
+        if not isinstance(run, str):
+            continue
+        for line in run.splitlines():
+            match = command_pattern.search(line)
+            if not match:
+                continue
+            found = True
+            tokens = [
+                token
+                for token in line[match.end() :].split()
+                if not token.startswith("-") and token not in skip_tokens
+            ]
+            if not tokens:
+                targets.append(("dir", working_directory))
+                continue
+            for token in tokens:
+                kind, value = _classify_token(token)
+                targets.append(
+                    (kind, join_relative_directory(working_directory, value))
+                )
+    return targets if found else None
+
+
+def path_is_covered(targets, relative_path: str) -> bool:
+    """Return True if any (kind, value) target actually covers relative_path."""
+    for kind, value in targets:
+        if kind == "dir":
+            if (
+                not value
+                or relative_path == value
+                or relative_path.startswith(f"{value}/")
+            ):
+                return True
+        elif fnmatch.fnmatch(relative_path, value):
+            return True
+    return False
+
+
+def shellcheck_targets(workflow: dict):
+    """Return the shellcheck scan targets configured in a workflow, or None.
+
+    Combines directory targets from `uses: *shellcheck*` action steps
+    (reading their `scandir`/`path` input) with the targets `tool_run_targets`
+    resolves from any `run: shellcheck ...` command lines. Returns None only
+    when neither form of shellcheck step is present at all; see
+    tool_run_targets for the None-vs-empty-list contract this mirrors.
+    """
+    action_targets = []
+    action_found = False
+    for working_directory, step in iter_workflow_steps(workflow):
+        uses = step.get("uses") or ""
+        if isinstance(uses, str) and "shellcheck" in uses.lower():
+            action_found = True
+            with_block = step.get("with") or {}
+            scandir = with_block.get("scandir") or with_block.get("path")
+            directory = (
+                join_relative_directory(working_directory, str(scandir))
+                if scandir
+                else working_directory
+            )
+            action_targets.append(("dir", directory))
+    run_targets = tool_run_targets(workflow, _SHELLCHECK_STEP)
+    if not action_found and run_targets is None:
+        return None
+    return action_targets + (run_targets or [])

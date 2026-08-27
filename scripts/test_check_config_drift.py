@@ -92,6 +92,84 @@ def test_ruff_pin_errors_reports_line_number():
     assert errors[0].startswith("lint.yml:3:")
 
 
+# --- parse_workflow_yaml / tool_run_targets / path_is_covered / shellcheck_targets ---
+
+
+def test_parse_workflow_yaml_parses_a_mapping():
+    workflow = guard.parse_workflow_yaml("jobs:\n  build:\n    steps: []\n")
+    assert workflow == {"jobs": {"build": {"steps": []}}}
+
+
+def test_parse_workflow_yaml_returns_empty_dict_for_non_mapping_document():
+    assert guard.parse_workflow_yaml("") == {}
+    assert guard.parse_workflow_yaml("- just\n- a\n- list\n") == {}
+
+
+def test_tool_run_targets_returns_none_when_the_tool_never_appears():
+    workflow = guard.parse_workflow_yaml("steps:\n  - run: echo hi\n")
+    assert guard.tool_run_targets(workflow, guard._PYTEST_STEP) is None
+
+
+def test_tool_run_targets_falls_back_to_working_directory_with_no_args():
+    workflow = guard.parse_workflow_yaml(
+        "steps:\n  - working-directory: evals\n    run: pytest\n"
+    )
+    assert guard.tool_run_targets(workflow, guard._PYTEST_STEP) == [("dir", "evals")]
+
+
+def test_tool_run_targets_classifies_directory_and_file_arguments():
+    workflow = guard.parse_workflow_yaml(
+        "steps:\n  - run: ruff check evals tests deploy.py\n"
+    )
+    targets = guard.tool_run_targets(
+        workflow, guard._RUFF_STEP, skip_tokens=guard.RUFF_SUBCOMMAND_TOKENS
+    )
+    assert set(targets) == {("dir", "evals"), ("dir", "tests"), ("glob", "deploy.py")}
+
+
+def test_tool_run_targets_skips_subcommand_and_flag_tokens():
+    workflow = guard.parse_workflow_yaml(
+        "steps:\n  - run: ruff format --check scripts/\n"
+    )
+    targets = guard.tool_run_targets(
+        workflow, guard._RUFF_STEP, skip_tokens=guard.RUFF_SUBCOMMAND_TOKENS
+    )
+    assert targets == [("dir", "scripts")]
+
+
+def test_path_is_covered_dir_target_matches_by_prefix():
+    targets = [("dir", "hooks")]
+    assert guard.path_is_covered(targets, "hooks/deploy.sh")
+    assert not guard.path_is_covered(targets, "research-first/hooks/deploy.sh")
+
+
+def test_path_is_covered_empty_dir_target_covers_everything():
+    assert guard.path_is_covered([("dir", "")], "anything/at/all.py")
+
+
+def test_path_is_covered_glob_target_matches_by_fnmatch():
+    targets = [("glob", "scripts/*.sh")]
+    assert guard.path_is_covered(targets, "scripts/deploy.sh")
+    assert not guard.path_is_covered(targets, "install-skills.sh")
+
+
+def test_shellcheck_targets_reads_scandir_from_an_action_step():
+    workflow = guard.parse_workflow_yaml(
+        "jobs:\n"
+        "  shell:\n"
+        "    steps:\n"
+        "      - uses: ludeeus/action-shellcheck@2.0.0\n"
+        "        with:\n"
+        "          scandir: '.'\n"
+    )
+    assert guard.shellcheck_targets(workflow) == [("dir", "")]
+
+
+def test_shellcheck_targets_returns_none_without_a_shellcheck_step():
+    workflow = guard.parse_workflow_yaml("steps:\n  - run: ruff check .\n")
+    assert guard.shellcheck_targets(workflow) is None
+
+
 # --- tracked_files / check_code_without_ci / check_em_dash (real git repo) ---
 
 
@@ -133,7 +211,7 @@ def test_check_code_without_ci_flags_missing_python_job(tmp_path):
 
     errors = guard.check_code_without_ci(tmp_path, "repo")
     assert len(errors) == 1
-    assert "ruff+pytest" in errors[0]
+    assert "no pytest step" in errors[0]
 
 
 def test_check_code_without_ci_ignores_fixture_only_python(tmp_path):
@@ -336,12 +414,90 @@ def test_check_code_without_ci_passes_with_all_steps_present(tmp_path):
     (repo / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
     _write_lint_yml(
         repo,
-        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck x.sh\n",
+        "steps:\n  - run: ruff check .\n  - run: pytest\n  - run: shellcheck deploy.sh\n",
     )
     _git("add", "-A", cwd=repo)
     _git("commit", "-m", "init", cwd=repo)
 
     assert guard.check_code_without_ci(tmp_path, "repo") == []
+
+
+def test_check_code_without_ci_flags_shellcheck_scandir_that_misses_the_file(tmp_path):
+    """Regression test for schoen-lab skills-dev#36.
+
+    Before the fix, the guard decided a repo had shellcheck coverage by
+    regex-matching the word "shellcheck" anywhere in lint.yml, never
+    checking that the configured scandir actually reached a tracked .sh
+    file. `skills-working-method` hit exactly this: `scandir: './hooks'`
+    scanned an empty directory for weeks because the real hooks/ lived one
+    level deeper, under research-first/hooks/, while the guard reported the
+    submodule compliant. Confirmed against the pre-fix implementation
+    (git stash) that this scenario returned [] there; it must not here.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    nested_hooks = repo / "research-first" / "hooks"
+    nested_hooks.mkdir(parents=True)
+    (nested_hooks / "prompt-reminder.sh").write_text(
+        "#!/bin/sh\ntrue\n", encoding="utf-8"
+    )
+    _write_lint_yml(
+        repo,
+        "jobs:\n"
+        "  shell:\n"
+        "    steps:\n"
+        "      - uses: ludeeus/action-shellcheck@2.0.0\n"
+        "        with:\n"
+        "          scandir: './hooks'\n",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "repo")
+    assert len(errors) == 1
+    assert "research-first/hooks/prompt-reminder.sh" in errors[0]
+    assert "not covered by any configured shellcheck" in errors[0]
+
+
+def test_check_code_without_ci_flags_ruff_step_scoped_to_the_wrong_skill(tmp_path):
+    """Regression test for the same vacuous-pass shape applied to ruff.
+
+    Before the fix, `_RUFF_STEP.search(text)` matched anywhere in the whole
+    lint.yml, so deleting one skill's entire ruff step out of a shared file
+    with multiple skills' python blocks still passed as long as some other
+    skill's block still mentioned "ruff". Confirmed against the pre-fix
+    implementation (git stash) that this scenario returned [] there; it
+    must not here.
+    """
+    repo = tmp_path / "family"
+    _init_repo(repo)
+    (repo / "alpha").mkdir()
+    (repo / "alpha" / "tool.py").write_text("print('a')\n", encoding="utf-8")
+    (repo / "beta").mkdir()
+    (repo / "beta" / "tool.py").write_text("print('b')\n", encoding="utf-8")
+    _write_lint_yml(
+        repo,
+        "jobs:\n"
+        "  python:\n"
+        "    steps:\n"
+        "      - name: alpha\n"
+        "        working-directory: alpha\n"
+        "        run: |\n"
+        "          ruff check .\n"
+        "          pytest\n"
+        # beta's own ruff step is gone; only its pytest step remains.
+        "      - name: beta\n"
+        "        working-directory: beta\n"
+        "        run: |\n"
+        "          pytest\n",
+    )
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-m", "init", cwd=repo)
+
+    errors = guard.check_code_without_ci(tmp_path, "family")
+    assert len(errors) == 1
+    assert "beta/tool.py" in errors[0]
+    assert "not scanned by any configured ruff step" in errors[0]
 
 
 def test_check_code_without_ci_skips_when_lint_yml_missing(tmp_path):
@@ -387,7 +543,7 @@ def test_check_code_without_ci_flags_nested_child_workflow_missing_steps(tmp_pat
     errors = guard.check_code_without_ci(tmp_path, "family")
     assert len(errors) == 1
     assert "family/child:" in errors[0]
-    assert "ruff+pytest" in errors[0]
+    assert "no pytest step" in errors[0]
 
 
 def test_check_ruff_pin_checks_nested_child_workflows(tmp_path):
