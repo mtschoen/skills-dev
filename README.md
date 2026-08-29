@@ -14,7 +14,7 @@ Three family submodules, each with its own thesis for why its skills belong toge
 
 Each skill directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
 
-A skill whose value collapses without a specific tool ships alongside that tool instead of living here: `capture-idea`, `find-task`, and `promote-project` at `packages/project_tracker/skills/`, `check-memory` and `memory-cleanup` at `packages/replica/skills/`, and `progress-beacon` at `satellites/agent-statusline/skills/`, all in the [schoen-lab](https://github.com/mtschoen/schoen-lab) monorepo. See [`docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md`](docs/superpowers/specs/2026-08-19-reconsidering-one-repo-per-skill-design.md) for the boundary reasoning behind both the family split and this placement.
+A skill whose value collapses without a specific tool ships alongside that tool instead of living here: `capture-idea`, `find-task`, and `promote-project` at `packages/project_tracker/skills/`, `check-memory` and `memory-cleanup` at `packages/replica/skills/`, and `progress-beacon` at `satellites/agent-statusline/skills/`, all in the [schoen-lab](https://github.com/mtschoen/schoen-lab) monorepo. See `AGENTS.md` ("Why families, not one repository per skill or a single flat repo" and "A skill that belongs with its tool, not here") for the boundary reasoning behind both the family split and this placement.
 
 ## Cloning
 
