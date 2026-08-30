@@ -128,9 +128,30 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
+      # Git for Windows is installed on the runner host (C:\Program Files\Git),
+      # but only its cmd\ directory is in the default PATH. Add Git's bin\ and
+      # usr\bin\ to GITHUB_PATH so subsequent steps can invoke `shell: bash`
+      # and bash scripts have access to MSYS utilities (cygpath, diff, grep, etc.).
+      - name: Add Git Bash to PATH
+        shell: pwsh
+        run: |
+          $gitDir = "C:\Program Files\Git"
+          if (-not (Test-Path "$gitDir\bin\bash.exe")) {
+            $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+            if ($gitCmd) {
+              $gitDir = (Get-Item $gitCmd.Source).Directory.Parent.FullName
+            }
+          }
+          "$gitDir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$gitDir\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      # No actions/setup-python here on purpose. The self-hosted windows-latest
+      # runners provision python through the fleet's own ensure-python.ps1 (an
+      # archive extract into C:\hostedtoolcache\python-current, on the runner
+      # PATH), so python is already available with no setup step. setup-python's
+      # install fallback runs CPython's installer with InstallAllUsers=1, which
+      # needs elevation the non-admin gitea-runner service account does not have,
+      # so it dies at setup.ps1:131 on any tool-cache miss (schoen-lab#2182). The
+      # green runs before then were cache hits, not a working install path.
       # The hook-registration assertions need python on PATH; without it the
       # installer prints "--hooks: skipped" and those assertions fail with no
       # hint as to why. Fail here instead, with the reason.
