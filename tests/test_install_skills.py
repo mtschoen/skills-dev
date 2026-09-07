@@ -89,6 +89,7 @@ class TestHelpAndUsage:
             "--claude",
             "--gemini",
             "--hermes",
+            "--qwen",
             "--all",
             "--check",
         ]:
@@ -406,6 +407,18 @@ class TestDestinationFlags:
             tmp_path / ".gemini" / "config" / "skills" / "gemini-skill" / "SKILL.md"
         ).exists()
 
+    def test_qwen_flag(self, tmp_repo, tmp_path):
+        make_skill(tmp_repo, "qwen-skill")
+        result = run_install_script(
+            tmp_repo,
+            "--qwen",
+            "-y",
+            "qwen-skill",
+            env_override={"HOME": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert (tmp_path / ".qwen" / "skills" / "qwen-skill" / "SKILL.md").exists()
+
 
 class TestExistingOnlyDefault:
     """Default mode (no agent flag) installs only to harness dirs that already
@@ -413,13 +426,16 @@ class TestExistingOnlyDefault:
 
     def test_installs_to_each_existing_harness(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "deux")
-        env = home_with(tmp_path, ".claude", ".gemini/config")  # .agents absent
+        env = home_with(
+            tmp_path, ".claude", ".gemini/config", ".qwen"
+        )  # .agents absent
         result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
         assert (tmp_path / ".claude" / "skills" / "deux" / "SKILL.md").exists()
         assert (
             tmp_path / ".gemini" / "config" / "skills" / "deux" / "SKILL.md"
         ).exists()
+        assert (tmp_path / ".qwen" / "skills" / "deux" / "SKILL.md").exists()
         assert not (tmp_path / ".agents").exists()
         assert "skip agents" in result.stdout
 
@@ -431,6 +447,7 @@ class TestExistingOnlyDefault:
         assert (tmp_path / ".claude" / "skills" / "solo" / "SKILL.md").exists()
         assert not (tmp_path / ".gemini").exists()
         assert not (tmp_path / ".agents").exists()
+        assert not (tmp_path / ".qwen").exists()
 
     def test_no_existing_harness_exits_zero_with_message(self, tmp_repo, tmp_path):
         make_skill(tmp_repo, "lonely")
@@ -441,7 +458,7 @@ class TestExistingOnlyDefault:
         result = run_install_script(tmp_repo, "-y", env_override=env)
         assert result.returncode == 0
         assert "No existing skill destinations" in result.stdout
-        for harness in (".agents", ".claude", ".gemini"):
+        for harness in (".agents", ".claude", ".gemini", ".qwen"):
             assert not (tmp_path / harness).exists()
 
     def test_explicit_flag_creates_absent_harness(self, tmp_repo, tmp_path):
@@ -467,6 +484,7 @@ class TestExistingOnlyDefault:
         assert (
             tmp_path / ".gemini" / "config" / "skills" / "everywhere" / "SKILL.md"
         ).exists()
+        assert (tmp_path / ".qwen" / "skills" / "everywhere" / "SKILL.md").exists()
 
 
 class TestHermesDestination:

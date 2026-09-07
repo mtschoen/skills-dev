@@ -40,15 +40,16 @@ This lives in `.git/config` and **cannot be committed**, so run it once per clon
 
 `install-skills.sh` (bash) and `install-skills.bat` (Windows) copy each skill into agent skill directories. **Author skills in their family repository** (the top-level submodules in this umbrella); installed copies are generated mirrors and should not be edited directly.
 
-`~/.agents/skills/` is the canonical runtime location read natively by **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills)). Claude Code and Antigravity use their own runtime locations, so the installer can mirror the same tracked skill content to them. Hermes is an active destination too: it uses `<Hermes home>/skills`.
+`~/.agents/skills/` is the canonical runtime location read natively by **Codex** ([docs](https://developers.openai.com/codex/skills)) and **opencode** ([docs](https://opencode.ai/docs/skills)). **Qwen Code** ([docs](https://github.com/QwenLM/Qwen-Agent)) reads its personal skills directory at `~/.qwen/skills/`. Claude Code and Antigravity use their own runtime locations, so the installer can mirror the same tracked skill content to them. Hermes is an active destination too: it uses `<Hermes home>/skills`.
 
-Hermes home resolution is, in order: `HERMES_HOME`, `LOCALAPPDATA/hermes` on Windows, then `~/.hermes` (or `%USERPROFILE%\.hermes` in the batch installer). With no destination flag, the installer selects only harness homes that already exist, including Hermes; it will not create unused runtime homes. Explicit destination flags and `--all` may create a missing destination.
+Hermes home resolution is, in order: `HERMES_HOME`, `LOCALAPPDATA/hermes` on Windows, then `~/.hermes` (or `%USERPROFILE%\.hermes` in the batch installer). With no destination flag, the installer selects only harness homes that already exist, including Hermes and Qwen Code; it will not create unused runtime homes. Explicit destination flags and `--all` may create a missing destination.
 
 ```bash
 ./install-skills.sh                    # existing destinations only
 ./install-skills.sh -y                 # overwrite without prompting
 ./install-skills.sh -n                 # dry run; show what would change
 ./install-skills.sh --agents           # only the canonical ~/.agents/skills
+./install-skills.sh --qwen             # only the Qwen Code mirror
 ./install-skills.sh --hermes smoke-test pushback  # Hermes mirror, selected skills
 ./install-skills.sh --all -y           # create/update every known destination
 ./install-skills.sh --check --hermes   # read-only drift check for Hermes
@@ -64,6 +65,7 @@ Supported destination flags:
 | `--claude` | `~/.claude/skills` (Claude Code mirror) |
 | `--gemini` | `~/.gemini/config/skills` (Antigravity global skills directory) |
 | `--hermes` | `<Hermes home>/skills` (generated Hermes mirror) |
+| `--qwen` | `~/.qwen/skills` (Qwen Code personal skills mirror) |
 | `--all` | all of the above; may create missing homes |
 
 Each skill directory has `SKILL.md` at its root. The installer ships only **git-tracked** files, filtered to a top-level allowlist: `SKILL.md` + `scripts/` + `references/` + `assets/`, plus any extra top-level entries a skill declares in an optional `.skillpack` manifest at its own root. Dev-only content (`evals/`, `tests/`, `workspace/`, `README.md`, `LICENSE`, etc.) is excluded by omission, and generated junk can never leak because untracked files are never shipped.

@@ -14,7 +14,7 @@
 # *.pyc, .pytest_cache), which is preserved and never reported as drift
 # (see IGNORE_PATTERNS below).
 #
-# Usage: ./install-skills.sh [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
+# Usage: ./install-skills.sh [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--qwen] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
 #   -y / --yes         overwrite without prompting
 #   -n / --dry-run     show what would change, don't copy
 #   --check            check for drift without prompting or writing (0 clean, 1 drift, 2 argument error)
@@ -22,6 +22,7 @@
 #   --claude           install to ~/.claude/skills (Claude's mirror of ~/.agents/skills)
 #   --gemini           install to ~/.gemini/config/skills (Antigravity's global skills dir)
 #   --hermes           install to Hermes home (HERMES_HOME, LOCALAPPDATA/hermes, or ~/.hermes)
+#   --qwen             install to ~/.qwen/skills (Qwen Code personal skills)
 #   --all              install to all known agent skill dirs
 #   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
 #                      install the debuggers it drives (netcoredbg/gdb/lldb/cdb,
@@ -32,11 +33,12 @@
 #
 # With no agent flag, installs only to harness dirs that ALREADY EXIST on this
 # machine, among ~/.agents/skills (canonical), ~/.claude/skills (Claude),
-# ~/.gemini/config/skills (Antigravity), and Hermes. A destination whose parent
-# harness dir (e.g.
-# ~/.gemini) is absent is skipped, so harnesses you don't use get no phantom
-# dir. Pass an explicit --agents/--claude/--gemini/--hermes/--all to create a missing
-# one. Codex reads ~/.agents/skills natively, so it needs no copy.
+# ~/.gemini/config/skills (Antigravity), ~/.qwen/skills (Qwen Code), and Hermes.
+# A destination whose parent harness dir (e.g. ~/.gemini) is absent is skipped,
+# so harnesses you don't use get no phantom dir. Pass an explicit
+# --agents/--claude/--gemini/--hermes/--qwen/--all to create a missing one.
+# Codex and OpenCode both read canonical ~/.agents/skills natively, so OpenCode
+# deliberately has no separate flag or copy.
 #
 # Test seam: set SKILLS_SRC_ROOT to override the source dir scanned for skills.
 
@@ -167,6 +169,7 @@ add_all_destinations() {
     maybe_add_destination claude "${HOME}/.claude/skills"
     maybe_add_destination gemini "${HOME}/.gemini/config/skills"
     maybe_add_destination hermes "$(hermes_home)/skills"
+    maybe_add_destination qwen "${HOME}/.qwen/skills"
 }
 
 # Add a destination, but in default mode (no explicit agent flag) skip it when
@@ -192,12 +195,13 @@ while [ $# -gt 0 ]; do
         --claude) add_destination claude "${HOME}/.claude/skills"; shift ;;
         --gemini) add_destination gemini "${HOME}/.gemini/config/skills"; shift ;;
         --hermes) add_destination hermes "$(hermes_home)/skills"; shift ;;
+        --qwen) add_destination qwen "${HOME}/.qwen/skills"; shift ;;
         --all) add_all_destinations; shift ;;
         --setup-debuggers) SETUP_DEBUGGERS=1; shift ;;
         --hooks) HOOKS_MODE=1; shift ;;
         --prune-hooks) PRUNE_HOOKS=1; shift ;;
         -h|--help)
-            sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*) echo "unknown flag: $1" >&2; exit 2 ;;
         *) SELECTED+=("$1"); shift ;;
@@ -210,7 +214,7 @@ if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
 fi
 
 if [ "${#DESTINATIONS[@]}" -eq 0 ]; then
-    echo "No existing skill destinations on this machine. Pass --agents/--claude/--gemini/--hermes or --all to bootstrap one."
+    echo "No existing skill destinations on this machine. Pass --agents/--claude/--gemini/--hermes/--qwen or --all to bootstrap one."
     exit 0
 fi
 

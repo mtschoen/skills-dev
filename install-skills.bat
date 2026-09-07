@@ -15,7 +15,7 @@ rem older installs are removed -- EXCEPT content created in the DEST by
 rem running installed scripts (__pycache__, *.pyc, .pytest_cache), which is
 rem preserved and never reported as drift (see ROBO_EXCL below).
 rem
-rem Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [skill ...]
+rem Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--qwen] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
 rem   -y / --yes         overwrite without prompting
 rem   -n / --dry-run     show what would change, don't copy
 rem   --check            check for drift without prompting or writing (0 clean, 1 drift, 2 argument error)
@@ -23,16 +23,20 @@ rem   --agents           install to %%USERPROFILE%%\.agents\skills
 rem   --claude           install to %%USERPROFILE%%\.claude\skills
 rem   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
 rem   --hermes           install to Hermes home (HERMES_HOME, LOCALAPPDATA\hermes, or USERPROFILE\.hermes)
+rem   --qwen             install to %%USERPROFILE%%\.qwen\skills
 rem   --all              install to all known agent skill dirs
 rem   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py to
 rem                      install the debuggers it drives (netcoredbg/cdb/lldb,
 rem                      platform-gated, idempotent); honors -n as the script's --dry-run
+rem   --hooks            check and offer to register hooks in harness settings
+rem   --prune-hooks      prune dangling hook entries pointing to uninstalled skill files
 rem   positional args    limit to specific skill names (default: all)
 rem
 rem With no agent flag, installs only to harness dirs that ALREADY EXIST on this
-rem machine (%USERPROFILE%\.agents, \.claude, \.gemini, Hermes). A destination whose
+rem machine (%USERPROFILE%\.agents, \.claude, \.gemini, \.qwen, Hermes). A destination whose
 rem parent dir is absent is skipped, so harnesses you don't use get no phantom
-rem dir. Pass explicit --agents/--claude/--gemini/--hermes/--all to create a missing one.
+rem dir. Pass explicit --agents/--claude/--gemini/--hermes/--qwen/--all to create a missing one.
+rem OpenCode shares %USERPROFILE%\.agents\skills natively, so it needs no duplicate mirror.
 rem
 rem Test seam: set SKILLS_SRC_ROOT to override the source dir scanned.
 
@@ -75,6 +79,7 @@ if /i "%~1"=="--agents"   (call :add_dest agents "%USERPROFILE%\.agents\skills" 
 if /i "%~1"=="--claude"   (call :add_dest claude "%USERPROFILE%\.claude\skills" & shift & goto parse_args)
 if /i "%~1"=="--gemini"   (call :add_dest gemini "%USERPROFILE%\.gemini\config\skills" & shift & goto parse_args)
 if /i "%~1"=="--hermes"   (call :set_hermes_home & call :add_dest hermes "!HERMES_SKILLS!" & shift & goto parse_args)
+if /i "%~1"=="--qwen"     (call :add_dest qwen "%USERPROFILE%\.qwen\skills" & shift & goto parse_args)
 if /i "%~1"=="--all"      (call :add_all_dests & shift & goto parse_args)
 if /i "%~1"=="--setup-debuggers" (set "SETUP_DEBUGGERS=1" & shift & goto parse_args)
 if /i "%~1"=="--hooks"        (set "HOOKS_MODE=1" & shift & goto parse_args)
@@ -96,7 +101,7 @@ if "%DEST_COUNT%"=="0" (
     call :add_all_dests
 )
 if "!DEFAULT_MODE!"=="1" if "!DEST_COUNT!"=="0" (
-    echo No existing skill destinations on this machine. Pass --agents/--claude/--gemini/--hermes or --all to bootstrap one.
+    echo No existing skill destinations on this machine. Pass --agents/--claude/--gemini/--hermes/--qwen or --all to bootstrap one.
     endlocal
     exit /b 0
 )
@@ -270,6 +275,7 @@ call :maybe_add_one claude "%USERPROFILE%\.claude\skills"
 call :maybe_add_one gemini "%USERPROFILE%\.gemini\config\skills"
 call :set_hermes_home
 call :maybe_add_one hermes "!HERMES_SKILLS!"
+call :maybe_add_one qwen "%USERPROFILE%\.qwen\skills"
 exit /b 0
 
 :set_hermes_home
@@ -532,7 +538,7 @@ exit /b 1
 :usage
 echo Install skills from this repo into one or more agent config dirs.
 echo.
-echo Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
+echo Usage: install-skills.bat [-y] [-n] [--check] [--agents] [--claude] [--gemini] [--hermes] [--qwen] [--all] [--setup-debuggers] [--hooks] [--prune-hooks] [skill ...]
 echo   -y / --yes         overwrite without prompting
 echo   -n / --dry-run     show what would change, don't copy
 echo   --check            check for drift without prompting or writing ^(0 clean, 1 drift, 2 argument error^)
@@ -540,6 +546,7 @@ echo   --agents           install to %%USERPROFILE%%\.agents\skills
 echo   --claude           install to %%USERPROFILE%%\.claude\skills
 echo   --gemini           install to %%USERPROFILE%%\.gemini\config\skills
 echo   --hermes           install to Hermes home ^(HERMES_HOME, LOCALAPPDATA\hermes, or USERPROFILE\.hermes^)
+echo   --qwen             install to %%USERPROFILE%%\.qwen\skills
 echo   --all              install to all known agent skill dirs
 echo   --setup-debuggers  after install, run using-a-debugger's setup-debuggers.py
 echo   --hooks            check and offer to register hooks in harness settings

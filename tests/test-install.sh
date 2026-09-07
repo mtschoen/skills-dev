@@ -303,6 +303,15 @@ if command -v cmd.exe >/dev/null 2>&1; then
     if [ "$bat_install_rc" -eq 0 ]; then pass ".bat: --hermes installs cleanly"; else fail ".bat: --hermes install exit $bat_install_rc"; fi
     assert_install ".bat Hermes" "$HOME_HERMES/skills"
 
+    echo "[.bat] Qwen install and check"
+    HOME_QWEN="$WORK/home_qwen"; mkdir -p "$HOME_QWEN"
+    HOME_QWEN_WIN="$(cygpath -w "$HOME_QWEN")"
+    USERPROFILE="$HOME_QWEN_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
+        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -y --qwen demoskill >/dev/null
+    bat_qwen_rc=$?
+    if [ "$bat_qwen_rc" -eq 0 ]; then pass ".bat: --qwen installs cleanly"; else fail ".bat: --qwen install exit $bat_qwen_rc"; fi
+    assert_install ".bat Qwen" "$HOME_QWEN/.qwen/skills"
+
     echo "[.bat] source enumeration failure preserves installed destination"
     failure_snapshot="$WORK/demoskill-before-source-failure"
     cp -a "$HOME_HERMES/skills/demoskill" "$failure_snapshot"
