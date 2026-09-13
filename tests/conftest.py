@@ -85,7 +85,11 @@ def run_install_script(repo_root, *args, cwd=None, env_override=None):
     Returns the CompletedProcess result.
     """
     cmd = ["bash", str(repo_root / "install-skills.sh"), *args]
-    run_env = os.environ.copy()
+    # Strip coverage instrumentation from child processes so staged hook script
+    # copies inside temporary pytest directories are not measured as coverage targets.
+    run_env = {
+        k: v for k, v in os.environ.items() if not k.startswith(("COV_", "COVERAGE_"))
+    }
     if env_override:
         run_env.update(env_override)
     return subprocess.run(
