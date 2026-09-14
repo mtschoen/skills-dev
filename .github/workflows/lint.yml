@@ -163,15 +163,11 @@ jobs:
         run: bash tests/test-install.sh
 
   aislop:
-    # AI-slop / code-quality / security gate over umbrella-owned code, plus a
-    # redundant format check. Scope + threshold (score 100) come from
-    # .aislop/config.yml. The gate runs the fork build (mtschoen/aislop,
-    # branch schoen/main: C#/roslynator + newer rules), installed straight
-    # from GitHub; npm builds it on install. aislop's format engine is
-    # enabled as a belt-and-suspenders pass: the fork prefers the PATH ruff
-    # over its vendored copy, so we install the SAME pinned ruff the
-    # dedicated ruff job uses and aislop formats identically. `aislop ci`
-    # exits non-zero below threshold.
+    # Score-100 gate over umbrella-owned code; scope and engines come from
+    # .aislop/config.yml. The revision in .aislop/fork-commit is built outside
+    # the workspace using its frozen pnpm lockfile; prepare produces dist/.
+    # Run the CLI directly, without a global install. Match the dedicated
+    # ruff job's pin so both format passes use the same formatter.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -184,20 +180,27 @@ jobs:
           python-version: '3.x'
       - name: Install pinned ruff (so aislop's format pass matches CI's ruff job)
         run: pip install ruff==0.15.15
-      - name: Install the aislop fork build
-        # Pinned to a commit SHA of the fork's schoen/main so the gate cannot
-        # drift under us; bump the SHA deliberately after new fork commits
-        # (git ls-remote https://github.com/mtschoen/aislop.git schoen/main).
-        # Built from an explicit clone: npm's git-dep prepare flow cannot run
-        # the fork's tsdown build (devDep missing in the temp clone), but a
-        # normal install in a real checkout can, and the packed tarball then
-        # installs globally without rebuilding.
+      - name: Read aislop fork pin
+        shell: bash
         run: |
-          git clone https://github.com/mtschoen/aislop.git "$RUNNER_TEMP/aislop"
-          git -C "$RUNNER_TEMP/aislop" checkout 4d87a844407cf348ec3265e8f5dfe97c614041d2
-          cd "$RUNNER_TEMP/aislop"
-          npm install
-          npm pack
-          npm install -g ./aislop-*.tgz
+          commit="$(< .aislop/fork-commit)"
+          commit="${commit#"${commit%%[![:space:]]*}"}"
+          commit="${commit%"${commit##*[![:space:]]}"}"
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid .aislop/fork-commit: expected one lowercase 40-hex SHA" >&2
+            exit 1
+          fi
+          echo "AISLOP_FORK_COMMIT=$commit" >> "$GITHUB_ENV"
+      - name: Install the aislop fork build
+        shell: bash
+        run: |
+          repository="$GITHUB_SERVER_URL/schoen/aislop.git"
+          if [[ "$GITHUB_SERVER_URL" == "https://github.com" ]]; then
+            repository="https://github.com/mtschoen/aislop.git"
+          fi
+          git clone "$repository" "$RUNNER_TEMP/aislop"
+          git -C "$RUNNER_TEMP/aislop" checkout "$AISLOP_FORK_COMMIT"
+          npx -y pnpm@10.28.0 --dir "$RUNNER_TEMP/aislop" install --frozen-lockfile
       - name: aislop ci (score 100 gate)
-        run: aislop ci
+        shell: bash
+        run: node "$RUNNER_TEMP/aislop/dist/cli.js" ci .
