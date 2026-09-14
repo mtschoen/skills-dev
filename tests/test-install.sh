@@ -23,6 +23,60 @@ assert_tree_matches() {
     fi
 }
 
+assert_crlf_drift() {
+    local label="$1" source="$2" destination="$3"
+    shift 3
+    local fixture output status
+    fixture="$(mktemp "$WORK/crlf.XXXXXX")" || {
+        fail "$label: could not create CRLF fixture"
+        return
+    }
+    echo "[$label] dry run reports CRLF-only drift"
+    sed 's/\r$//; s/$/\r/' "$source" > "$fixture"
+    if ! diff -q --strip-trailing-cr "$source" "$fixture" >/dev/null; then
+        fail "$label: CRLF fixture content differs"
+        rm -f "$fixture"
+        return
+    fi
+    if cmp -s "$source" "$fixture"; then
+        fail "$label: CRLF fixture is byte-identical to source"
+        rm -f "$fixture"
+        return
+    fi
+    pass "$label: CRLF fixture has equivalent text but different bytes"
+    if ! cp "$fixture" "$destination"; then
+        fail "$label: could not prepare CRLF destination"
+        rm -f "$fixture"
+        return
+    fi
+    output="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.autocrlf \
+        GIT_CONFIG_VALUE_0=true "$@" 2>&1)"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        pass "$label: CRLF-only dry run exits 0"
+    else
+        fail "$label: CRLF-only dry run exit $status"
+        printf '%s\n' "$output" >&2
+    fi
+    case "$output" in
+        *"update demoskill"*) pass "$label: CRLF-only drift reports an update" ;;
+        *) fail "$label: CRLF-only drift did not report an update" ;;
+    esac
+    case "$output" in
+        *"~ SKILL.md (changed)"*) pass "$label: CRLF-only drift appears in preview" ;;
+        *) fail "$label: CRLF-only drift missing from preview" ;;
+    esac
+    if cmp -s "$fixture" "$destination"; then
+        pass "$label: CRLF-only dry run preserves destination bytes"
+    else
+        fail "$label: CRLF-only dry run modified destination"
+    fi
+    if ! cp "$source" "$destination"; then
+        fail "$label: could not restore destination after CRLF test"
+    fi
+    rm -f "$fixture"
+}
+
 # Git Bash/MSYS hands POSIX paths to native Windows programs, which cannot read
 # them; cygpath converts. Elsewhere the path is already native.
 native_path() {
@@ -102,6 +156,10 @@ HOME_SH="$WORK/home_sh"; mkdir -p "$HOME_SH"
 HOME_SH_NATIVE="$(native_path "$HOME_SH")"
 HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" bash "$REPO_ROOT/install-skills.sh" -y --claude demoskill >/dev/null
 assert_install ".sh" "$HOME_SH/.claude/skills"
+assert_crlf_drift ".sh" "$SRC/demoskill/SKILL.md" \
+    "$HOME_SH/.claude/skills/demoskill/SKILL.md" \
+    env HOME="$HOME_SH" USERPROFILE="$HOME_SH_NATIVE" SKILLS_SRC_ROOT="$SRC" \
+    bash "$REPO_ROOT/install-skills.sh" -n --claude demoskill
 
 echo "[.sh] cleanup of prior-install cruft"
 mkdir -p "$HOME_SH/.claude/skills/demoskill/reports" \
@@ -212,27 +270,11 @@ if command -v cmd.exe >/dev/null 2>&1; then
         fail ".bat: equal-metadata apply left stale bytes"
     fi
 
-    echo "[.bat] dry run reports CRLF-only drift"
-    bat_skill="$HOME_BAT/.claude/skills/demoskill/SKILL.md"
-    sed 's/\r$//; s/$/\r/' "$SRC2/demoskill/SKILL.md" > "$bat_skill.crlf"
-    mv "$bat_skill.crlf" "$bat_skill"
-    if diff -q --strip-trailing-cr "$SRC2/demoskill/SKILL.md" "$bat_skill" >/dev/null; then
-        pass ".bat: CRLF fixture has equivalent text content"
-    else
-        fail ".bat: CRLF fixture content differs"
-    fi
-    bat_crlf_out="$(USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" MSYS_NO_PATHCONV=1 \
-        cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" -n --claude demoskill 2>&1)"
-    bat_crlf_rc=$?
-    if [ "$bat_crlf_rc" -eq 0 ]; then pass ".bat: CRLF-only dry run exits 0"; else fail ".bat: CRLF-only dry run exit $bat_crlf_rc"; fi
-    case "$bat_crlf_out" in
-        *"update demoskill"*) pass ".bat: CRLF-only drift reports an update" ;;
-        *) fail ".bat: CRLF-only drift did not report an update" ;;
-    esac
-    case "$bat_crlf_out" in
-        *"~ SKILL.md (changed)"*) pass ".bat: CRLF-only drift appears in preview" ;;
-        *) fail ".bat: CRLF-only drift missing from preview" ;;
-    esac
+    assert_crlf_drift ".bat" "$SRC2/demoskill/SKILL.md" \
+        "$HOME_BAT/.claude/skills/demoskill/SKILL.md" \
+        env HOME="$HOME_BAT" USERPROFILE="$HOME_BAT_WIN" SKILLS_SRC_ROOT="$SRC2_WIN" \
+        MSYS_NO_PATHCONV=1 cmd.exe /c "$(cygpath -w "$REPO_ROOT/install-skills.bat")" \
+        -n --claude demoskill
 
     echo "[.bat] dry run retains structural drift"
     mkdir -p "$HOME_BAT/.claude/skills/demoskill/empty-stale"

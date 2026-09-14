@@ -85,6 +85,20 @@ Four skills in this umbrella ship runtime hooks (`project-lock`, `progress-beaco
 
 Claude Code hooks are wired into `~/.claude/settings.json` (with automatic backup). For `project-lock`, the offer flow supports enforcement modes (`warn` recommended for initial setup, or `deny`). Decisions are recorded in `.hook-decisions.json` alongside installed skills. Harnesses without command hook contracts (Antigravity, Hermes) are reported as uncovered.
 
+## Installer tests
+
+Run `bash tests/test-install.sh` from the repository root. The suite creates
+temporary tracked skill fixtures and sandboxed installer homes; it does not
+install into your normal harness directories.
+
+On Linux it tests the shell installer and explicitly skips the batch installer.
+On Windows, run it from Git Bash with Python, cmd.exe, and robocopy available.
+The `install-test-windows` CI job exercises both installers, including the same
+CRLF-only destination drift assertions: equivalent text but different bytes,
+an update and changed-file preview, exit status zero for dry-run, and unchanged
+destination bytes. The comparison runs with `core.autocrlf=true` in the child
+environment to cover Git for Windows line-ending normalization.
+
 ## Working across all submodules
 
 `scripts/push-all.{sh,bat}` and `scripts/pull-all.{sh,bat}` iterate every active submodule plus the umbrella repo. push-all pushes `origin` by default; pull-all fetches + fast-forwards from `origin` only. Either accepts `--remote <name>` to add another remote where it exists. Each push is pre-flighted (fetch + classify local vs remote as up-to-date / fast-forward / behind / diverged), and non-fast-forward states are reported and skipped. Errors print inline and don't halt the run, but the script exits non-zero with a summary.

@@ -158,9 +158,13 @@ jobs:
       - name: verify python is on PATH
         shell: bash
         run: command -v python || command -v python3
-      - name: install integration test
+      - name: install integration test (both installers, including CRLF parity)
         shell: bash
-        run: bash tests/test-install.sh
+        run: |
+          command -v cmd.exe
+          command -v cygpath
+          command -v robocopy.exe
+          bash tests/test-install.sh
 
   aislop:
     # Score-100 gate over umbrella-owned code; scope and engines come from
