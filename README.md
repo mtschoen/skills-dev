@@ -8,7 +8,7 @@ Three family submodules, each with its own thesis for why its skills belong toge
 
 **`completion-discipline`** (7 skills) - what an agent owes the work at the point it stops: `maintaining-full-coverage` (hold the coverage/lint bar, never lower it silently), `smoke-test`, `docs-update`, `escalate-over-shortcut`, `wrap` (the session-closing ritual: externalize memory, leave every repo clean), `reconcile-tasks`, `project-maintenance`.
 
-**`working-method`** (6 skills) - habits applied while the work is happening, not after it: `research-first`, `running-spikes`, `pushback`, `effective-refactor`, `fast-tests`, `using-a-debugger`.
+**`working-method`** (8 skills) - habits applied while the work is happening, not after it: `research-first`, `running-spikes`, `pushback`, `effective-refactor`, `writing-tests` (what makes a test a good one, and how a suite stays affordable), `fast-tests`, `using-a-debugger`, `filing-issues`.
 
 **`orchestration`** (6 skills) - what changes when work outgrows one agent, one machine, or one budget: `agent-remote`, `external-harness-routing`, `fleet-orchestration`, `review-in-parallel-pipelines`, `project-lock`, `cost-estimator`.
 
