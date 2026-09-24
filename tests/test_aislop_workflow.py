@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -6,10 +7,12 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = "bbe98d453b1ffd3c7d01df72e9860ccdb1a5c50b"
+# Read from the pin file so an automated pin bump does not break this suite.
+PIN = (ROOT / ".aislop/fork-commit").read_text(encoding="ascii").strip()
 
 
 def test_pin_is_exact_and_not_ignored():
+    assert re.fullmatch(r"[0-9a-f]{40}", PIN)
     assert (ROOT / ".aislop/fork-commit").read_bytes() == (PIN + "\n").encode()
     result = subprocess.run(
         ["git", "check-ignore", "--no-index", "-q", ".aislop/fork-commit"],
