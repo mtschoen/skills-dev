@@ -28,9 +28,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Detect toolchain baked into the runner image
+        id: baked
+        run: bash ci/baked-toolchain.sh python
       - uses: actions/setup-python@v5
+        if: steps.baked.outputs.python != 'true'
         with:
           python-version: '3.x'
+      - name: Prepare baked Python virtual environment
+        if: steps.baked.outputs.python == 'true'
+        run: |
+          python -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
       - run: pip install skills-ref==0.1.1 pytest==8.3.4 pyyaml==6.0.3
       - name: Validate every skill with agentskills
         run: python scripts/validate_skills.py
@@ -66,9 +76,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Detect toolchain baked into the runner image
+        id: baked
+        run: bash ci/baked-toolchain.sh python
       - uses: actions/setup-python@v5
+        if: steps.baked.outputs.python != 'true'
         with:
           python-version: '3.x'
+      - name: Prepare baked Python virtual environment
+        if: steps.baked.outputs.python == 'true'
+        run: |
+          python -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
       - run: pip install skills-ref==0.1.1 pytest==8.3.4 pytest-cov==6.2.1 pyyaml==6.0.3
       - name: Run full test suite with coverage
         id: coverage
@@ -89,9 +109,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Detect toolchain baked into the runner image
+        id: baked
+        run: bash ci/baked-toolchain.sh python
       - uses: actions/setup-python@v5
+        if: steps.baked.outputs.python != 'true'
         with:
           python-version: '3.x'
+      - name: Prepare baked Python virtual environment
+        if: steps.baked.outputs.python == 'true'
+        run: |
+          python -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
       - run: pip install ruff==0.15.15
       - name: ruff check
         run: ruff check scripts/ tests/ ci/
@@ -176,12 +206,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Detect toolchain baked into the runner image
+        id: baked
+        run: bash ci/baked-toolchain.sh node python
       - uses: actions/setup-node@v4
+        if: steps.baked.outputs.node != 'true'
         with:
           node-version: '22'
       - uses: actions/setup-python@v5
+        if: steps.baked.outputs.python != 'true'
         with:
           python-version: '3.x'
+      - name: Prepare baked Python virtual environment
+        if: steps.baked.outputs.python == 'true'
+        run: |
+          python -m venv "${RUNNER_TEMP}/venv"
+          echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
       - name: Install pinned ruff (so aislop's format pass matches CI's ruff job)
         run: pip install ruff==0.15.15
       - name: Read aislop fork pin

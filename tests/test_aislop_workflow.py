@@ -92,3 +92,53 @@ def test_install_and_gate_contract():
     assert not job.get("continue-on-error", False)
     configuration = yaml.safe_load((ROOT / ".aislop/config.yml").read_text())
     assert configuration["ci"]["failBelow"] == 100
+
+
+@pytest.mark.parametrize(
+    ("job_name", "pip_step_identifier"),
+    [
+        ("aislop", "Install pinned ruff"),
+        ("validate-skills", "pip install skills-ref"),
+        ("coverage", "pip install skills-ref"),
+        ("ruff", "pip install ruff"),
+    ],
+    ids=[
+        "pr69-aislop-baked-python",
+        "pr69-validate-skills-baked-python",
+        "pr69-coverage-baked-python",
+        "pr69-ruff-baked-python",
+    ],
+)
+def test_baked_python_environment_contract(job_name, pip_step_identifier):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/lint.yml").read_text())
+    job = workflow["jobs"][job_name]
+    steps = job["steps"]
+
+    baked_step = next(step for step in steps if step.get("id") == "baked")
+    assert "python" in baked_step["run"]
+
+    setup_python = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/setup-python")
+    )
+    assert setup_python.get("if") == "steps.baked.outputs.python != 'true'"
+
+    preparation_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare baked Python virtual environment"
+    )
+    assert preparation_step.get("if") == "steps.baked.outputs.python == 'true'"
+    preparation_run = preparation_step.get("run", "")
+    assert "python -m venv" in preparation_run
+    assert "$GITHUB_PATH" in preparation_run
+
+    pip_step_index = next(
+        index
+        for index, step in enumerate(steps)
+        if pip_step_identifier in step.get("name", "")
+        or pip_step_identifier in step.get("run", "")
+    )
+    preparation_step_index = steps.index(preparation_step)
+    assert preparation_step_index < pip_step_index
