@@ -29,9 +29,19 @@ import re
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
+from collections.abc import Collection
 from pathlib import Path
 
+import yaml
+
 _DEFAULT_ENCODING = "utf-8"
+_DEFAULT_ERRORS = "replace"
+_BROKEN_CHECKOUT = "{}: empty submodule dir, no SKILL.md - checkout looks broken"
+_BRACKET_ERR = (
+    "{}: frontmatter description contains angle brackets, which Claude Code "
+    "rejects in the prompt-injected description field"
+)
 _PATH_LINE = re.compile(r"^\s*path\s*=\s*(.+?)\s*$", re.MULTILINE)
 _FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---", re.DOTALL)
 # The description scalar plus any indented continuation lines.
@@ -68,6 +78,41 @@ _SCAN_SKIP_DIRECTORIES = {
     "smoke-test-workspace",
 }
 
+# Allowed frontmatter fields per the Agent Skills spec (skills-ref 0.1.1).
+SPEC_FRONTMATTER_FIELDS = frozenset(
+    {"name", "description", "license", "allowed-tools", "metadata", "compatibility"}
+)
+
+# Claude Code frontmatter extensions beyond the bare Agent Skills spec, taken
+# from the "Frontmatter reference" table at
+# https://code.claude.com/docs/en/skills.md (fetched 2026-10-15), minus the
+# spec fields agentskills already accepts (name, description, allowed-tools,
+# metadata, license, compatibility). skills-ref 0.1.1 rejects all of these.
+CLAUDE_CODE_FRONTMATTER_FIELDS = frozenset(
+    [
+        "when_to_use",
+        "argument-hint",
+        "arguments",
+        "disable-model-invocation",
+        "user-invocable",
+        "disallowed-tools",
+        "model",
+        "effort",
+        "context",
+        "agent",
+        "background",
+        "hooks",
+        "paths",
+        "shell",
+    ]
+)
+
+_UNEXPECTED_FIELDS_LINE = re.compile(
+    r"^(?P<prefix>-\s*)?Unexpected fields in frontmatter:\s*(?P<fields>.+?)\.\s+"
+    r"(?P<suffix>Only \[.*\] are allowed\.)$"
+)
+_VALIDATION_HEADER = re.compile(r"^Validation failed for .*:$")
+
 _EXTRA_SKILL_ROOT_GLOBS = ("packages/*/skills/*", "satellites/*/skills/*")
 
 
@@ -85,9 +130,8 @@ def tracked_files(directory: Path):
                 yield candidate
         return
     for candidate in sorted(directory.rglob("*")):
-        relative_parts = candidate.relative_to(directory).parts
         if candidate.is_file() and not _SCAN_SKIP_DIRECTORIES.intersection(
-            relative_parts
+            candidate.relative_to(directory).parts
         ):
             yield candidate
 
@@ -98,10 +142,8 @@ def check_portability(skill_root: Path, path: str):
     report_prefix = path
     if path and not (skill_root / "SKILL.md").is_file():
         candidate = skill_root / path
-        if candidate.is_dir() and (candidate / "SKILL.md").is_file():
-            skill_dir = candidate
-        else:
-            report_prefix = ""
+        is_sub = candidate.is_dir() and (candidate / "SKILL.md").is_file()
+        skill_dir, report_prefix = (candidate, path) if is_sub else (skill_dir, "")
     else:
         report_prefix = "" if path in ("", ".", "./") else path
 
@@ -111,7 +153,7 @@ def check_portability(skill_root: Path, path: str):
         relative = tracked.relative_to(skill_dir).as_posix()
         if relative in _PORTABILITY_FILE_EXEMPTIONS:
             continue
-        text = tracked.read_text(encoding=_DEFAULT_ENCODING, errors="replace")
+        text = tracked.read_text(encoding=_DEFAULT_ENCODING, errors=_DEFAULT_ERRORS)
         for _line_number, line in enumerate(text.splitlines(), start=1):
             for label, pattern in _PORTABILITY_RULES:
                 if label not in exempt_labels and pattern.search(line):
@@ -126,7 +168,7 @@ def check_portability(skill_root: Path, path: str):
 def check_description_brackets(path: str, skill_md: Path):
     """Flag angle brackets in the frontmatter description (Claude Code rule)."""
     match = _FRONTMATTER.match(
-        skill_md.read_text(encoding=_DEFAULT_ENCODING, errors="replace")
+        skill_md.read_text(encoding=_DEFAULT_ENCODING, errors=_DEFAULT_ERRORS)
     )
     if match is None:
         return []  # malformed frontmatter is skills-ref's finding, not ours
@@ -137,10 +179,7 @@ def check_description_brackets(path: str, skill_md: Path):
     if re.fullmatch(r"[>|][+-]?(?:\s+#.*)?", head):
         head = ""  # YAML block-scalar indicator (e.g. `>-`), not content
     if "<" in head or ">" in head or re.search(r"[<>]", described.group("rest")):
-        return [
-            f"{path}: frontmatter description contains angle brackets, which "
-            "Claude Code rejects in the prompt-injected description field"
-        ]
+        return [_BRACKET_ERR.format(path)]
     return []
 
 
@@ -151,31 +190,26 @@ def parse_submodule_paths(gitmodules_text):
 
 def discover_gitmodule_skills(repo_root: Path, module_paths):
     """Return skill paths and skip/error side lists from .gitmodules entries."""
-    skill_paths = []
-    skipped = []
-    errors = []
+    skill_paths, skipped, errors = [], [], []
     for path in module_paths:
         module_dir = repo_root / path
         if not module_dir.is_dir():
-            errors.append(
-                f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"
-            )
+            errors.append(_BROKEN_CHECKOUT.format(path))
             continue
         if (module_dir / "SKILL.md").is_file():
             skill_paths.append(path)
             continue
-        discovered = []
-        for child in sorted(module_dir.iterdir()):
-            if child.is_dir() and not child.name.startswith("."):
-                discovered.append(f"{path}/{child.name}")
+        discovered = [
+            f"{path}/{c.name}"
+            for c in sorted(module_dir.iterdir())
+            if c.is_dir() and not c.name.startswith(".")
+        ]
         if discovered:
             skill_paths.extend(discovered)
         elif has_content(module_dir):
             skipped.append(path)
         else:
-            errors.append(
-                f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"
-            )
+            errors.append(_BROKEN_CHECKOUT.format(path))
     return skill_paths, skipped, errors
 
 
@@ -199,9 +233,7 @@ def find_skill_md(skill_dir: Path):
 
 def has_content(skill_dir: Path):
     """True if the dir holds any file other than .git (i.e. it checked out)."""
-    if not skill_dir.is_dir():
-        return False
-    return any(entry.name != ".git" for entry in skill_dir.iterdir())
+    return skill_dir.is_dir() and any(e.name != ".git" for e in skill_dir.iterdir())
 
 
 def run_agentskills(skill_dir: Path):
@@ -212,15 +244,54 @@ def run_agentskills(skill_dir: Path):
             "the 'agentskills' command was not found on PATH; "
             "install it with `pip install skills-ref==0.1.1`"
         )
-    completed = subprocess.run(
-        [executable, "validate", str(skill_dir)],
-        capture_output=True,
-        text=True,
+    res = subprocess.run(
+        [executable, "validate", str(skill_dir)], capture_output=True, text=True
     )
-    return (completed.returncode, (completed.stdout + completed.stderr).strip())
+    return (res.returncode, (res.stdout + res.stderr).strip())
 
 
-import xml.etree.ElementTree as ET
+def extract_frontmatter_keys(skill_md: Path | None) -> set[str]:
+    """Return top-level mapping keys in SKILL.md frontmatter, or an empty set."""
+    if skill_md is None or not skill_md.is_file():
+        return set()
+    text = skill_md.read_text(encoding=_DEFAULT_ENCODING, errors=_DEFAULT_ERRORS)
+    if not text.startswith("---"):
+        return set()
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return set()
+    try:
+        data = yaml.load(parts[1], Loader=yaml.BaseLoader)
+    except Exception:
+        return set()
+    return {str(k) for k in data} if isinstance(data, dict) else set()
+
+
+def filter_claude_code_fields(
+    output: str, frontmatter_keys: Collection[str] | None = None
+):
+    """Return agentskills finding lines minus Claude Code's documented fields."""
+    raw_keys = set(frontmatter_keys) if frontmatter_keys is not None else set()
+    exempt_fields = raw_keys & CLAUDE_CODE_FRONTMATTER_FIELDS
+    unknown_fields = sorted(
+        raw_keys - SPEC_FRONTMATTER_FIELDS - CLAUDE_CODE_FRONTMATTER_FIELDS
+    )
+
+    kept = []
+    for line in (raw.strip() for raw in output.splitlines()):
+        if not line:
+            continue
+        match = _UNEXPECTED_FIELDS_LINE.match(line)
+        if match is not None and exempt_fields:
+            if not unknown_fields:
+                continue
+            prefix = match.group("prefix") or ""
+            line = (
+                f"{prefix}Unexpected fields in frontmatter: "
+                f"{', '.join(unknown_fields)}. {match.group('suffix')}"
+            )
+        kept.append(line)
+    return [] if all(_VALIDATION_HEADER.match(line) for line in kept) else kept
 
 
 def check_frontmatter_xml_wellformedness(skill_dir: Path, path: str):
@@ -228,12 +299,11 @@ def check_frontmatter_xml_wellformedness(skill_dir: Path, path: str):
     skill_md = find_skill_md(skill_dir)
     if skill_md is None:
         return []
-    text = skill_md.read_text(encoding=_DEFAULT_ENCODING, errors="replace")
+    text = skill_md.read_text(encoding=_DEFAULT_ENCODING, errors=_DEFAULT_ERRORS)
     parts = text.split("---", 2)
     if len(parts) < 3:
         return []
-    frontmatter = parts[1]
-    xml_doc = f"<skill>\n{frontmatter}\n</skill>"
+    xml_doc = f"<skill>\n{parts[1]}\n</skill>"
     try:
         ET.fromstring(xml_doc)
         return []
@@ -252,20 +322,21 @@ def validate_skill(skill_dir: Path, path: str, runner=run_agentskills):
         if path == "." or path == "":
             path = skill_dir.name
     if not skill_dir.is_dir():
-        return [f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"]
+        return [_BROKEN_CHECKOUT.format(path)]
     skill_md = find_skill_md(skill_dir)
     if skill_md is None:
         if has_content(skill_dir):
             return []  # WIP submodule path - skip, not an error
-        return [f"{path}: empty submodule dir, no SKILL.md - checkout looks broken"]
+        return [_BROKEN_CHECKOUT.format(path)]
 
     errors = []
+    frontmatter_keys = extract_frontmatter_keys(skill_md)
     code, output = runner(skill_dir)
     if code != 0:
-        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        lines = filter_claude_code_fields(output, frontmatter_keys=frontmatter_keys)
         if lines:
             errors.extend(f"{path}: {line}" for line in lines)
-        else:
+        elif not output.strip():
             errors.append(f"{path}: skills-ref reported invalid (exit {code})")
     errors.extend(check_frontmatter_xml_wellformedness(skill_dir, path))
     errors.extend(check_description_brackets(path, skill_md))
@@ -322,9 +393,7 @@ def evaluate(repo_root: Path, runner=run_agentskills, extra_skill_roots=None):
     errors, validated, skipped = validate_repo_with_options(
         repo_root, runner=runner, extra_skill_roots=extra_skill_roots
     )
-    notices = [
-        f"note: skipped {name} (submodule has no SKILL.md yet)" for name in skipped
-    ]
+    notices = [f"note: skipped {n} (submodule has no SKILL.md yet)" for n in skipped]
     if errors:
         return (
             1,
@@ -354,15 +423,13 @@ def main():
         "--extra-skill-root",
         action="append",
         default=[],
-        help=(
-            "scan an additional repo root for relocated skills under "
-            "`packages/*/skills/*` and `satellites/*/skills/*`"
-        ),
+        help="scan an additional repo root for relocated skills",
     )
     args, _ = parser.parse_known_args()
-    repo_root = Path(__file__).resolve().parent.parent
     code, lines = evaluate(
-        repo_root, runner=run_agentskills, extra_skill_roots=args.extra_skill_root
+        Path(__file__).resolve().parent.parent,
+        runner=run_agentskills,
+        extra_skill_roots=args.extra_skill_root,
     )
     print("\n".join(lines))
     sys.exit(code)

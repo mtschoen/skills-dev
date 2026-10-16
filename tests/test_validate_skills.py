@@ -10,11 +10,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from validate_skills import (
     check_description_brackets,
     check_portability,
+    filter_claude_code_fields,
     tracked_files,
     validate_skill,
 )
@@ -300,3 +303,127 @@ class TestDescriptionBrackets:
             "name: demo\ndescription: >-\n  Emits a <beacon> block periodically.",
         )
         assert len(check_description_brackets("demo", skill_md)) == 1
+
+
+class TestClaudeCodeFrontmatterFields:
+    @pytest.mark.parametrize(
+        "extra_frontmatter",
+        [
+            pytest.param("", id="plain-extension"),
+            pytest.param(
+                "metadata:\n  example-date: 2026-02-30\n",
+                id="date-like-metadata-invalid-day",
+            ),
+            pytest.param(
+                "metadata:\n  example-date: 2026-13-01\n",
+                id="date-like-metadata-invalid-month",
+            ),
+            pytest.param(
+                "metadata:\n  example-date: 2026-10-15T25:00:00\n",
+                id="date-like-metadata-invalid-hour",
+            ),
+        ],
+    )
+    def test_documented_claude_code_field_is_accepted(
+        self, tmp_path, extra_frontmatter
+    ):
+        make_skill(
+            tmp_path,
+            "demo",
+            {
+                "SKILL.md": (
+                    "---\n"
+                    "name: demo\n"
+                    "description: A valid description.\n"
+                    "disable-model-invocation: true\n"
+                    f"{extra_frontmatter}"
+                    "---\n"
+                    "# demo\n"
+                )
+            },
+        )
+        errors = validate_skill(tmp_path, "demo")
+        assert errors == []
+
+    @pytest.mark.parametrize(
+        ("unknown_key", "extra_frontmatter", "expected_finding"),
+        [
+            pytest.param(
+                "banana",
+                "disable-model-invocation: true\n",
+                "banana",
+                id="unrecognized-mixed-with-valid-extension",
+            ),
+            pytest.param(
+                "yes",
+                "disable-model-invocation: true\n",
+                "yes",
+                id="boolean-spelled-unknown-key",
+            ),
+            pytest.param(
+                "model, hooks",
+                "",
+                "model, hooks",
+                id="comma-containing-unknown-key",
+            ),
+            pytest.param(
+                "disable-model-invocation ",
+                "",
+                "disable-model-invocation ",
+                id="trailing-whitespace-unknown-key",
+            ),
+            pytest.param(
+                " disable-model-invocation",
+                "",
+                " disable-model-invocation",
+                id="leading-whitespace-unknown-key",
+            ),
+        ],
+    )
+    def test_unknown_field_is_still_reported_alone(
+        self, tmp_path, unknown_key, extra_frontmatter, expected_finding
+    ):
+        unknown_line = (
+            f'"{unknown_key}": true\n'
+            if ("," in unknown_key or unknown_key != unknown_key.strip())
+            else f"{unknown_key}: true\n"
+        )
+        make_skill(
+            tmp_path,
+            "demo",
+            {
+                "SKILL.md": (
+                    "---\n"
+                    "name: demo\n"
+                    "description: A valid description.\n"
+                    f"{extra_frontmatter}"
+                    f"{unknown_line}"
+                    "---\n"
+                    "# demo\n"
+                )
+            },
+        )
+        errors = validate_skill(tmp_path, "demo")
+        findings = [e for e in errors if "Unexpected fields" in e]
+        assert len(findings) == 1
+        assert expected_finding in findings[0]
+        if expected_finding in ("banana", "yes"):
+            assert "disable-model-invocation" not in findings[0]
+
+    def test_unrelated_failure_is_unchanged(self, tmp_path):
+        make_skill(tmp_path, "demo", {"SKILL.md": "# demo\n"})
+        errors = validate_skill(
+            tmp_path, "demo", runner=lambda _: (1, "Missing required field: name")
+        )
+        assert errors == ["demo: Missing required field: name"]
+
+    def test_header_kept_when_other_finding_remains(self):
+        output = (
+            "Validation failed for /skills/demo:\n"
+            "  - Unexpected fields in frontmatter: model. Only [] are allowed.\n"
+            "  - Missing required field: name"
+        )
+        assert filter_claude_code_fields(output, frontmatter_keys={"model"}) == [
+            "Validation failed for /skills/demo:",
+            "- Missing required field: name",
+        ]
