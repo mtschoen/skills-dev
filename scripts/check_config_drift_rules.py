@@ -2,6 +2,7 @@
 
 import fnmatch
 import re
+from pathlib import Path
 
 import yaml
 
@@ -57,7 +58,9 @@ PROJECT_LOCK_CONFIG = {
 
 FIXTURE_DIR_SEGMENTS = frozenset({"workspace", "mock_repo", "fixtures"})
 
-FLEET_RUFF_PIN = "0.15.15"
+# The single source of truth for the fleet ruff pin: ci/ruff-version.
+RUFF_VERSION_FILE = Path(__file__).resolve().parent.parent / "ci" / "ruff-version"
+FLEET_RUFF_PIN = RUFF_VERSION_FILE.read_text(encoding="utf-8").strip()
 
 # The literal UTF-8 bytes for U+2014 EM DASH.
 _DEFAULT_ENCODING = "utf-8"
@@ -88,6 +91,8 @@ _SHELLCHECK_STEP = re.compile(r"shellcheck", re.IGNORECASE)
 
 _RUFF_INSTALL_LINE = re.compile(r"(pip|pipx)\s+install\b.*\bruff\b|uvx\s+ruff@")
 _RUFF_VERSION_REF = re.compile(r"ruff(?:==|@)([^\s'\"]+)")
+# `ruff==$(cat ci/ruff-version)`: the install reads the pin file directly.
+_RUFF_PIN_FILE_REF = re.compile(r"ruff==\$\(cat ci/ruff-version\)")
 
 
 def strip_jsonc_comments(text: str) -> str:
@@ -141,6 +146,8 @@ def ruff_pin_errors_in_text(label: str, text: str) -> list[str]:
     errors = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         if not _RUFF_INSTALL_LINE.search(line):
+            continue
+        if _RUFF_PIN_FILE_REF.search(line):
             continue
         match = _RUFF_VERSION_REF.search(line)
         if match is None:
@@ -287,9 +294,9 @@ def tool_run_targets(
     segments, and command_pattern is only accepted as a real invocation when
     it matches at the START of a segment (after stripping an optional
     `python -m` prefix) - not merely anywhere later in the line. Without this,
-    a shared install line like `pip install ruff==0.15.15 pytest` reads both
+    a shared install line like `pip install ruff==<pin> pytest` reads both
     "ruff" and "pytest" as invocations of those tools and produces junk
-    targets (`('glob', '==0.15.15')`, a bare `('dir', <working_directory>)`
+    targets (`('glob', '==<pin>')`, a bare `('dir', <working_directory>)`
     for "pytest") that happen to be harmless today only because they are
     permissive, not because they are correct - the same shape of bug #36 is
     about, just waiting for a real gap to hide behind one.

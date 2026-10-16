@@ -100,7 +100,7 @@ def test_install_and_gate_contract():
         ("aislop", "Install pinned ruff"),
         ("validate-skills", "pip install skills-ref"),
         ("coverage", "pip install skills-ref"),
-        ("ruff", "pip install ruff"),
+        ("ruff", "Install pinned ruff"),
     ],
     ids=[
         "pr69-aislop-baked-python",
@@ -142,3 +142,14 @@ def test_baked_python_environment_contract(job_name, pip_step_identifier):
     )
     preparation_step_index = steps.index(preparation_step)
     assert preparation_step_index < pip_step_index
+
+
+@pytest.mark.parametrize("job_name", ["ruff", "aislop"])
+def test_ruff_install_reads_the_pin_file(job_name):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/lint.yml").read_text())
+    steps = workflow["jobs"][job_name]["steps"]
+    install = next(
+        step for step in steps if "Install pinned ruff" in step.get("name", "")
+    )
+    assert install["shell"] == "bash"
+    assert install["run"] == 'pip install "ruff==$(cat ci/ruff-version)"'

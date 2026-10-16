@@ -56,7 +56,7 @@ def test_is_fixture_path_requires_exact_segment_not_substring():
 
 
 def test_ruff_pin_errors_accepts_the_fleet_pin():
-    text = "      - run: pip install ruff==0.15.15 pytest\n"
+    text = f"      - run: pip install ruff=={guard.FLEET_RUFF_PIN} pytest\n"
     assert guard.ruff_pin_errors_in_text("lint.yml", text) == []
 
 
@@ -76,7 +76,7 @@ def test_ruff_pin_errors_flags_unpinned_install():
 
 
 def test_ruff_pin_errors_accepts_uvx_form():
-    text = "      - run: uvx ruff@0.15.15 check .\n"
+    text = f"      - run: uvx ruff@{guard.FLEET_RUFF_PIN} check .\n"
     assert guard.ruff_pin_errors_in_text("lint.yml", text) == []
 
 
@@ -90,6 +90,16 @@ def test_ruff_pin_errors_reports_line_number():
     text = "one\ntwo\n      - run: pip install ruff==9.9.9\n"
     errors = guard.ruff_pin_errors_in_text("lint.yml", text)
     assert errors[0].startswith("lint.yml:3:")
+
+
+def test_ruff_pin_errors_accepts_pin_file_read():
+    text = '        run: pip install "ruff==$(cat ci/ruff-version)"\n'
+    assert guard.ruff_pin_errors_in_text("lint.yml", text) == []
+
+
+def test_fleet_pin_is_read_from_the_pin_file():
+    pin_file = Path(__file__).resolve().parent.parent / "ci" / "ruff-version"
+    assert pin_file.read_text().strip() == guard.FLEET_RUFF_PIN
 
 
 # --- parse_workflow_yaml / tool_run_targets / path_is_covered / shellcheck_targets ---
@@ -142,11 +152,11 @@ def test_tool_run_targets_ignores_tool_names_inside_a_pip_install_line():
     an invocation of either tool - both names appear only as install
     arguments, not as the command being run. Before anchoring the match to
     the start of a command segment, this produced junk targets like
-    `('glob', '==0.15.15')` for ruff and a bare working-directory target for
+    `('glob', '==<pin>')` for ruff and a bare working-directory target for
     pytest, which happened to be harmless only because it was permissive.
     """
     workflow = guard.parse_workflow_yaml(
-        "steps:\n  - run: pip install ruff==0.15.15 pytest pytest-cov\n"
+        f"steps:\n  - run: pip install ruff=={guard.FLEET_RUFF_PIN} pytest pytest-cov\n"
     )
     assert guard.tool_run_targets(workflow, guard._RUFF_STEP) is None
     assert guard.tool_run_targets(workflow, guard._PYTEST_STEP) is None
@@ -606,7 +616,7 @@ def test_check_ruff_pin_checks_nested_child_workflows(tmp_path):
     repo = tmp_path / "family"
     _init_repo(repo)
     child = repo / "child"
-    _write_lint_yml(repo, "- run: pip install ruff==0.15.15\n")
+    _write_lint_yml(repo, f"- run: pip install ruff=={guard.FLEET_RUFF_PIN}\n")
     _write_lint_yml(child, "- run: pip install ruff==0.11.0\n")
     errors = guard.check_ruff_pin(tmp_path, "family")
     assert len(errors) == 1

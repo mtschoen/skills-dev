@@ -70,17 +70,53 @@ def _run(tool, file_path, executable, *args):
     return (result.stdout + result.stderr).strip(), result.returncode
 
 
+def _pinned_ruff_version():
+    """Return the version pinned in ci/ruff-version, or None when unreadable."""
+    project_root = Path(
+        os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).parents[2]
+    )
+    with contextlib.suppress(OSError):
+        return (project_root / "ci" / "ruff-version").read_text().strip() or None
+    return None
+
+
+def _ruff_command(pinned_version):
+    """Return (command_prefix, warning). Prefers `uvx ruff@<pin>`.
+
+    A PATH ruff is used only when it reports exactly the pinned version;
+    otherwise the command is None and the warning names both versions.
+    """
+    if not pinned_version:
+        return None, None
+    uvx = shutil.which("uvx")
+    if uvx:
+        return [uvx, f"ruff@{pinned_version}"], None
+    ruff = shutil.which("ruff")
+    if not ruff:
+        return None, None
+    output, code = _run("ruff-version", "", ruff, "--version")
+    found = output.split()[-1] if code == 0 and output else "unknown"
+    if found == pinned_version:
+        return [ruff], None
+    return None, (
+        f"ruff on-save skipped: PATH ruff is {found} but ci/ruff-version pins "
+        f"{pinned_version}."
+    )
+
+
 def lint(file_path):
     """Return a list of (tool_name, findings_text) for a file ([] if clean)."""
     findings = []
     if file_path.endswith(".py"):
-        ruff = shutil.which("ruff")
+        ruff, warning = _ruff_command(_pinned_ruff_version())
+        if warning:
+            findings.append(("ruff version pin", warning))
         if ruff:
             # Auto-apply formatting first so an edit never carries format drift
             # into a commit (CI gates `ruff format --check`); then surface lint
             # findings. The format pass rewrites the file in place when needed.
-            _run("ruff-format", file_path, ruff, "format", file_path)
-            out, code = _run("ruff", file_path, ruff, "check", file_path)
+            _run("ruff-format", file_path, ruff[0], *ruff[1:], "format", file_path)
+            out, code = _run("ruff", file_path, ruff[0], *ruff[1:], "check", file_path)
             if out and code != 0:
                 findings.append(("ruff", out))
     elif file_path.endswith(".sh"):
