@@ -67,6 +67,12 @@ def test_ruff_pin_errors_flags_wrong_version():
     assert "0.11.0" in errors[0]
     assert guard.FLEET_RUFF_PIN in errors[0]
 
+    commented = "      - run: pip install ruff==0.11.0 # ruff==$(cat ci/ruff-version)\n"
+    commented_errors = guard.ruff_pin_errors_in_text("lint.yml", commented)
+    assert len(commented_errors) == 1
+    assert "0.11.0" in commented_errors[0]
+    assert guard.FLEET_RUFF_PIN in commented_errors[0]
+
 
 def test_ruff_pin_errors_flags_unpinned_install():
     text = "      - run: pip install ruff pytest\n"
@@ -436,6 +442,39 @@ def test_check_ruff_pin_scopes_submodule_and_umbrella_labels(tmp_path):
     assert len(sub_errors) == 1 and sub_errors[0].startswith("alpha/lint.yml:")
     assert len(umbrella_errors) == 1
     assert umbrella_errors[0].startswith("lint.yml:")
+
+    _write_lint_yml(
+        tmp_path / "missing_pin",
+        '- run: pip install "ruff==$(cat ci/ruff-version)"\n',
+    )
+    missing_errors = guard.check_ruff_pin(tmp_path, "missing_pin")
+    assert len(missing_errors) == 1
+    assert missing_errors[0].startswith("missing_pin/lint.yml:")
+    assert "ci/ruff-version" in missing_errors[0]
+
+    wrong_directory = tmp_path / "wrong_pin"
+    _write_lint_yml(
+        wrong_directory,
+        '- run: pip install "ruff==$(cat ci/ruff-version)"\n',
+    )
+    (wrong_directory / "ci").mkdir(parents=True, exist_ok=True)
+    (wrong_directory / "ci" / "ruff-version").write_text("0.11.0\n", encoding="utf-8")
+    wrong_errors = guard.check_ruff_pin(tmp_path, "wrong_pin")
+    assert len(wrong_errors) == 1
+    assert wrong_errors[0].startswith("wrong_pin/lint.yml:")
+    assert "0.11.0" in wrong_errors[0]
+    assert guard.FLEET_RUFF_PIN in wrong_errors[0]
+
+    matching_directory = tmp_path / "matching_pin"
+    _write_lint_yml(
+        matching_directory,
+        '- run: pip install "ruff==$(cat ci/ruff-version)"\n',
+    )
+    (matching_directory / "ci").mkdir(parents=True, exist_ok=True)
+    (matching_directory / "ci" / "ruff-version").write_text(
+        f"{guard.FLEET_RUFF_PIN}\n", encoding="utf-8"
+    )
+    assert guard.check_ruff_pin(tmp_path, "matching_pin") == []
 
 
 # --- check_code_without_ci (shell side) ---

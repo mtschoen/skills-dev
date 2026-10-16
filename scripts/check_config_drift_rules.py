@@ -90,9 +90,8 @@ _PYTEST_STEP = re.compile(r"\bpytest\b")
 _SHELLCHECK_STEP = re.compile(r"shellcheck", re.IGNORECASE)
 
 _RUFF_INSTALL_LINE = re.compile(r"(pip|pipx)\s+install\b.*\bruff\b|uvx\s+ruff@")
-_RUFF_VERSION_REF = re.compile(r"ruff(?:==|@)([^\s'\"]+)")
-# `ruff==$(cat ci/ruff-version)`: the install reads the pin file directly.
-_RUFF_PIN_FILE_REF = re.compile(r"ruff==\$\(cat ci/ruff-version\)")
+_RUFF_PIN_FILE_EXPRESSION = "$(cat ci/ruff-version)"
+_RUFF_VERSION_REF = re.compile(r"ruff(?:==|@)(\$\(cat ci/ruff-version\)|[^\s'\"]+)")
 
 
 def strip_jsonc_comments(text: str) -> str:
@@ -141,25 +140,48 @@ def expected_markdownlint_config(path: str) -> dict:
     return MODAL_CONFIG_EXCEPTIONS.get(path, CANONICAL_MODAL_CONFIG)
 
 
-def ruff_pin_errors_in_text(label: str, text: str) -> list[str]:
+def _check_pin_file(
+    label: str, line_number: int, checkout_root: Path | None
+) -> list[str]:
+    if checkout_root is None:
+        return []
+    pin_file = checkout_root / "ci" / "ruff-version"
+    if not pin_file.is_file():
+        return [f"{label}:{line_number}: references missing ci/ruff-version"]
+    actual_pin = pin_file.read_text(encoding=_DEFAULT_ENCODING).strip()
+    if actual_pin != FLEET_RUFF_PIN:
+        return [
+            f"{label}:{line_number}: ci/ruff-version pins ruff to {actual_pin}, "
+            f"fleet pin is {FLEET_RUFF_PIN}"
+        ]
+    return []
+
+
+def ruff_pin_errors_in_text(
+    label: str, text: str, checkout_root: Path | None = None
+) -> list[str]:
     """Return pin-drift errors for ruff install lines in workflow text."""
     errors = []
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        if not _RUFF_INSTALL_LINE.search(line):
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        active_line = line.split("#", 1)[0]
+        if not _RUFF_INSTALL_LINE.search(active_line):
             continue
-        if _RUFF_PIN_FILE_REF.search(line):
-            continue
-        match = _RUFF_VERSION_REF.search(line)
-        if match is None:
+        matches = list(_RUFF_VERSION_REF.finditer(active_line))
+        if not matches:
             errors.append(
-                f"{label}:{lineno}: installs ruff without a version pin "
+                f"{label}:{line_number}: installs ruff without a version pin "
                 f"(expected =={FLEET_RUFF_PIN})"
             )
-        elif match.group(1) != FLEET_RUFF_PIN:
-            errors.append(
-                f"{label}:{lineno}: pins ruff to {match.group(1)}, "
-                f"fleet pin is {FLEET_RUFF_PIN}"
-            )
+            continue
+        for match in matches:
+            pinned_version = match.group(1)
+            if pinned_version == _RUFF_PIN_FILE_EXPRESSION:
+                errors.extend(_check_pin_file(label, line_number, checkout_root))
+            elif pinned_version != FLEET_RUFF_PIN:
+                errors.append(
+                    f"{label}:{line_number}: pins ruff to {pinned_version}, "
+                    f"fleet pin is {FLEET_RUFF_PIN}"
+                )
     return errors
 
 

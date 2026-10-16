@@ -288,11 +288,8 @@ def check_code_without_ci(repo_root: Path, path):
 def check_ruff_pin(repo_root: Path, path):
     """Return pin-drift errors across all workflow files for one repo."""
     skill_dir = resolve_skill_directory(repo_root, path)
-    workflows_dir = (
-        skill_dir / ".github" / "workflows"
-        if path
-        else (repo_root / ".github" / "workflows")
-    )
+    checkout_root = skill_dir if path else repo_root
+    workflows_dir = checkout_root / ".github" / "workflows"
 
     errors = []
     if workflows_dir.is_dir():
@@ -301,7 +298,7 @@ def check_ruff_pin(repo_root: Path, path):
         ):
             label = f"{path}/{workflow_file.name}" if path else workflow_file.name
             text = workflow_file.read_text(encoding=_DEFAULT_ENCODING)
-            errors.extend(ruff_pin_errors_in_text(label, text))
+            errors.extend(ruff_pin_errors_in_text(label, text, checkout_root))
 
     if path and skill_dir.is_dir():
         for child in sorted(skill_dir.iterdir()):
@@ -313,7 +310,7 @@ def check_ruff_pin(repo_root: Path, path):
                     ):
                         label = f"{path}/{child.name}/{workflow_file.name}"
                         text = workflow_file.read_text(encoding=_DEFAULT_ENCODING)
-                        errors.extend(ruff_pin_errors_in_text(label, text))
+                        errors.extend(ruff_pin_errors_in_text(label, text, child))
     return errors
 
 
