@@ -4,15 +4,16 @@ import importlib.util
 import json
 import os
 import runpy
+import shutil
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest import mock
 
 import pytest
-import tomllib
 
 SCRIPT_PATH = Path(__file__).with_name("post-coverage-status.py")
 WORKFLOW_PATH = SCRIPT_PATH.parent.parent / ".github" / "workflows" / "lint.yml"
@@ -385,6 +386,47 @@ def test_local_ruff_gate_and_documentation_include_publisher() -> None:
     assert "ruff format --check scripts/ tests/ ci/" in pre_commit
     assert "ruff check scripts/ tests/ ci/" in agents
     assert "ruff format --check scripts/ tests/ ci/" in agents
+
+
+def test_pre_commit_hook_reads_the_pin_file_and_never_runs_unpinned_ruff() -> None:
+    pre_commit = PRE_COMMIT_PATH.read_text()
+
+    assert 'pin_file="$repo_root/ci/ruff-version"' in pre_commit
+    assert 'RUFF=(uvx "ruff@$pinned")' in pre_commit
+    # Every non-uvx selection compares the reported version to the pin.
+    assert "RUFF=(ruff)" in pre_commit
+    assert 'ruff --version 2>/dev/null)" = "ruff $pinned"' in pre_commit
+    assert 'python -m ruff --version 2>/dev/null)" = "ruff $pinned"' in pre_commit
+    assert "command -v ruff >/dev/null 2>&1; then" not in pre_commit
+
+
+def test_pre_commit_hook_fails_when_only_a_wrong_version_is_available(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "ci").mkdir(parents=True)
+    (repo / "ci" / "ruff-version").write_text("1.2.3\n")
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    for tool in ("bash", "git", "tr"):
+        (bin_directory / tool).symlink_to(shutil.which(tool))
+    fake_ruff = bin_directory / "ruff"
+    fake_ruff.write_text("#!/bin/sh\necho 'ruff 0.0.1'\n")
+    fake_ruff.chmod(0o755)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+    result = subprocess.run(
+        [str(bin_directory / "bash"), str(PRE_COMMIT_PATH)],
+        cwd=repo,
+        env={"PATH": str(bin_directory)},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "ruff 1.2.3" in result.stderr
+    assert "uv tool install ruff==1.2.3" in result.stderr
+    assert "pip install ruff==1.2.3" in result.stderr
 
 
 def test_workflow_passes_coverage_step_outcome_to_publisher() -> None:

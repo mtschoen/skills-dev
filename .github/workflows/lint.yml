@@ -122,7 +122,9 @@ jobs:
           python -m venv "${RUNNER_TEMP}/venv"
           echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
           echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
-      - run: pip install ruff==0.15.15
+      - name: Install pinned ruff (version read from ci/ruff-version)
+        shell: bash
+        run: pip install "ruff==$(cat ci/ruff-version)"
       - name: ruff check
         run: ruff check scripts/ tests/ ci/
       - name: ruff format --check
@@ -224,7 +226,8 @@ jobs:
           echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
           echo "VIRTUAL_ENV=${RUNNER_TEMP}/venv" >> "$GITHUB_ENV"
       - name: Install pinned ruff (so aislop's format pass matches CI's ruff job)
-        run: pip install ruff==0.15.15
+        shell: bash
+        run: pip install "ruff==$(cat ci/ruff-version)"
       - name: Read aislop fork pin
         shell: bash
         run: |

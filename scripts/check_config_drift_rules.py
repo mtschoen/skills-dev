@@ -2,6 +2,7 @@
 
 import fnmatch
 import re
+from pathlib import Path
 
 import yaml
 
@@ -57,7 +58,9 @@ PROJECT_LOCK_CONFIG = {
 
 FIXTURE_DIR_SEGMENTS = frozenset({"workspace", "mock_repo", "fixtures"})
 
-FLEET_RUFF_PIN = "0.15.15"
+# The single source of truth for the fleet ruff pin: ci/ruff-version.
+RUFF_VERSION_FILE = Path(__file__).resolve().parent.parent / "ci" / "ruff-version"
+FLEET_RUFF_PIN = RUFF_VERSION_FILE.read_text(encoding="utf-8").strip()
 
 # The literal UTF-8 bytes for U+2014 EM DASH.
 _DEFAULT_ENCODING = "utf-8"
@@ -87,7 +90,8 @@ _PYTEST_STEP = re.compile(r"\bpytest\b")
 _SHELLCHECK_STEP = re.compile(r"shellcheck", re.IGNORECASE)
 
 _RUFF_INSTALL_LINE = re.compile(r"(pip|pipx)\s+install\b.*\bruff\b|uvx\s+ruff@")
-_RUFF_VERSION_REF = re.compile(r"ruff(?:==|@)([^\s'\"]+)")
+_RUFF_PIN_FILE_EXPRESSION = "$(cat ci/ruff-version)"
+_RUFF_VERSION_REF = re.compile(r"ruff(?:==|@)(\$\(cat ci/ruff-version\)|[^\s'\"]+)")
 
 
 def strip_jsonc_comments(text: str) -> str:
@@ -136,23 +140,48 @@ def expected_markdownlint_config(path: str) -> dict:
     return MODAL_CONFIG_EXCEPTIONS.get(path, CANONICAL_MODAL_CONFIG)
 
 
-def ruff_pin_errors_in_text(label: str, text: str) -> list[str]:
+def _check_pin_file(
+    label: str, line_number: int, checkout_root: Path | None
+) -> list[str]:
+    if checkout_root is None:
+        return []
+    pin_file = checkout_root / "ci" / "ruff-version"
+    if not pin_file.is_file():
+        return [f"{label}:{line_number}: references missing ci/ruff-version"]
+    actual_pin = pin_file.read_text(encoding=_DEFAULT_ENCODING).strip()
+    if actual_pin != FLEET_RUFF_PIN:
+        return [
+            f"{label}:{line_number}: ci/ruff-version pins ruff to {actual_pin}, "
+            f"fleet pin is {FLEET_RUFF_PIN}"
+        ]
+    return []
+
+
+def ruff_pin_errors_in_text(
+    label: str, text: str, checkout_root: Path | None = None
+) -> list[str]:
     """Return pin-drift errors for ruff install lines in workflow text."""
     errors = []
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        if not _RUFF_INSTALL_LINE.search(line):
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        active_line = line.split("#", 1)[0]
+        if not _RUFF_INSTALL_LINE.search(active_line):
             continue
-        match = _RUFF_VERSION_REF.search(line)
-        if match is None:
+        matches = list(_RUFF_VERSION_REF.finditer(active_line))
+        if not matches:
             errors.append(
-                f"{label}:{lineno}: installs ruff without a version pin "
+                f"{label}:{line_number}: installs ruff without a version pin "
                 f"(expected =={FLEET_RUFF_PIN})"
             )
-        elif match.group(1) != FLEET_RUFF_PIN:
-            errors.append(
-                f"{label}:{lineno}: pins ruff to {match.group(1)}, "
-                f"fleet pin is {FLEET_RUFF_PIN}"
-            )
+            continue
+        for match in matches:
+            pinned_version = match.group(1)
+            if pinned_version == _RUFF_PIN_FILE_EXPRESSION:
+                errors.extend(_check_pin_file(label, line_number, checkout_root))
+            elif pinned_version != FLEET_RUFF_PIN:
+                errors.append(
+                    f"{label}:{line_number}: pins ruff to {pinned_version}, "
+                    f"fleet pin is {FLEET_RUFF_PIN}"
+                )
     return errors
 
 
@@ -287,9 +316,9 @@ def tool_run_targets(
     segments, and command_pattern is only accepted as a real invocation when
     it matches at the START of a segment (after stripping an optional
     `python -m` prefix) - not merely anywhere later in the line. Without this,
-    a shared install line like `pip install ruff==0.15.15 pytest` reads both
+    a shared install line like `pip install ruff==<pin> pytest` reads both
     "ruff" and "pytest" as invocations of those tools and produces junk
-    targets (`('glob', '==0.15.15')`, a bare `('dir', <working_directory>)`
+    targets (`('glob', '==<pin>')`, a bare `('dir', <working_directory>)`
     for "pytest") that happen to be harmless today only because they are
     permissive, not because they are correct - the same shape of bug #36 is
     about, just waiting for a real gap to hide behind one.

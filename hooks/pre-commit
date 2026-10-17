@@ -18,14 +18,28 @@
 #   git config core.hooksPath hooks
 set -euo pipefail
 
-if command -v ruff >/dev/null 2>&1; then
+repo_root="$(git rev-parse --show-toplevel)"
+pin_file="$repo_root/ci/ruff-version"
+if [ ! -r "$pin_file" ]; then
+  echo "pre-commit: cannot read the ruff pin at ci/ruff-version." >&2
+  exit 1
+fi
+pinned="$(tr -d '[:space:]' < "$pin_file")"
+
+# Select ruff, always at exactly the pinned version (ci/ruff-version): uvx first,
+# then a PATH ruff or a python module ruff that reports that exact version.
+# An unpinned ruff is never run.
+RUFF=()
+if command -v uvx >/dev/null 2>&1; then
+  RUFF=(uvx "ruff@$pinned")
+elif command -v ruff >/dev/null 2>&1 && [ "$(ruff --version 2>/dev/null)" = "ruff $pinned" ]; then
   RUFF=(ruff)
-elif command -v python >/dev/null 2>&1 && python -m ruff --version >/dev/null 2>&1; then
+elif command -v python >/dev/null 2>&1 && [ "$(python -m ruff --version 2>/dev/null)" = "ruff $pinned" ]; then
   RUFF=(python -m ruff)
-elif command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then
+elif command -v python3 >/dev/null 2>&1 && [ "$(python3 -m ruff --version 2>/dev/null)" = "ruff $pinned" ]; then
   RUFF=(python3 -m ruff)
 else
-  echo "pre-commit: ruff not found (pip install ruff==0.15.15). This gate mirrors CI." >&2
+  echo "pre-commit: ruff $pinned (ci/ruff-version) not available; run 'uv tool install ruff==$pinned' or 'pip install ruff==$pinned'." >&2
   exit 1
 fi
 

@@ -56,7 +56,7 @@ def test_is_fixture_path_requires_exact_segment_not_substring():
 
 
 def test_ruff_pin_errors_accepts_the_fleet_pin():
-    text = "      - run: pip install ruff==0.15.15 pytest\n"
+    text = f"      - run: pip install ruff=={guard.FLEET_RUFF_PIN} pytest\n"
     assert guard.ruff_pin_errors_in_text("lint.yml", text) == []
 
 
@@ -67,6 +67,12 @@ def test_ruff_pin_errors_flags_wrong_version():
     assert "0.11.0" in errors[0]
     assert guard.FLEET_RUFF_PIN in errors[0]
 
+    commented = "      - run: pip install ruff==0.11.0 # ruff==$(cat ci/ruff-version)\n"
+    commented_errors = guard.ruff_pin_errors_in_text("lint.yml", commented)
+    assert len(commented_errors) == 1
+    assert "0.11.0" in commented_errors[0]
+    assert guard.FLEET_RUFF_PIN in commented_errors[0]
+
 
 def test_ruff_pin_errors_flags_unpinned_install():
     text = "      - run: pip install ruff pytest\n"
@@ -76,7 +82,7 @@ def test_ruff_pin_errors_flags_unpinned_install():
 
 
 def test_ruff_pin_errors_accepts_uvx_form():
-    text = "      - run: uvx ruff@0.15.15 check .\n"
+    text = f"      - run: uvx ruff@{guard.FLEET_RUFF_PIN} check .\n"
     assert guard.ruff_pin_errors_in_text("lint.yml", text) == []
 
 
@@ -90,6 +96,16 @@ def test_ruff_pin_errors_reports_line_number():
     text = "one\ntwo\n      - run: pip install ruff==9.9.9\n"
     errors = guard.ruff_pin_errors_in_text("lint.yml", text)
     assert errors[0].startswith("lint.yml:3:")
+
+
+def test_ruff_pin_errors_accepts_pin_file_read():
+    text = '        run: pip install "ruff==$(cat ci/ruff-version)"\n'
+    assert guard.ruff_pin_errors_in_text("lint.yml", text) == []
+
+
+def test_fleet_pin_is_read_from_the_pin_file():
+    pin_file = Path(__file__).resolve().parent.parent / "ci" / "ruff-version"
+    assert pin_file.read_text().strip() == guard.FLEET_RUFF_PIN
 
 
 # --- parse_workflow_yaml / tool_run_targets / path_is_covered / shellcheck_targets ---
@@ -142,11 +158,11 @@ def test_tool_run_targets_ignores_tool_names_inside_a_pip_install_line():
     an invocation of either tool - both names appear only as install
     arguments, not as the command being run. Before anchoring the match to
     the start of a command segment, this produced junk targets like
-    `('glob', '==0.15.15')` for ruff and a bare working-directory target for
+    `('glob', '==<pin>')` for ruff and a bare working-directory target for
     pytest, which happened to be harmless only because it was permissive.
     """
     workflow = guard.parse_workflow_yaml(
-        "steps:\n  - run: pip install ruff==0.15.15 pytest pytest-cov\n"
+        f"steps:\n  - run: pip install ruff=={guard.FLEET_RUFF_PIN} pytest pytest-cov\n"
     )
     assert guard.tool_run_targets(workflow, guard._RUFF_STEP) is None
     assert guard.tool_run_targets(workflow, guard._PYTEST_STEP) is None
@@ -427,6 +443,39 @@ def test_check_ruff_pin_scopes_submodule_and_umbrella_labels(tmp_path):
     assert len(umbrella_errors) == 1
     assert umbrella_errors[0].startswith("lint.yml:")
 
+    _write_lint_yml(
+        tmp_path / "missing_pin",
+        '- run: pip install "ruff==$(cat ci/ruff-version)"\n',
+    )
+    missing_errors = guard.check_ruff_pin(tmp_path, "missing_pin")
+    assert len(missing_errors) == 1
+    assert missing_errors[0].startswith("missing_pin/lint.yml:")
+    assert "ci/ruff-version" in missing_errors[0]
+
+    wrong_directory = tmp_path / "wrong_pin"
+    _write_lint_yml(
+        wrong_directory,
+        '- run: pip install "ruff==$(cat ci/ruff-version)"\n',
+    )
+    (wrong_directory / "ci").mkdir(parents=True, exist_ok=True)
+    (wrong_directory / "ci" / "ruff-version").write_text("0.11.0\n", encoding="utf-8")
+    wrong_errors = guard.check_ruff_pin(tmp_path, "wrong_pin")
+    assert len(wrong_errors) == 1
+    assert wrong_errors[0].startswith("wrong_pin/lint.yml:")
+    assert "0.11.0" in wrong_errors[0]
+    assert guard.FLEET_RUFF_PIN in wrong_errors[0]
+
+    matching_directory = tmp_path / "matching_pin"
+    _write_lint_yml(
+        matching_directory,
+        '- run: pip install "ruff==$(cat ci/ruff-version)"\n',
+    )
+    (matching_directory / "ci").mkdir(parents=True, exist_ok=True)
+    (matching_directory / "ci" / "ruff-version").write_text(
+        f"{guard.FLEET_RUFF_PIN}\n", encoding="utf-8"
+    )
+    assert guard.check_ruff_pin(tmp_path, "matching_pin") == []
+
 
 # --- check_code_without_ci (shell side) ---
 
@@ -606,7 +655,7 @@ def test_check_ruff_pin_checks_nested_child_workflows(tmp_path):
     repo = tmp_path / "family"
     _init_repo(repo)
     child = repo / "child"
-    _write_lint_yml(repo, "- run: pip install ruff==0.15.15\n")
+    _write_lint_yml(repo, f"- run: pip install ruff=={guard.FLEET_RUFF_PIN}\n")
     _write_lint_yml(child, "- run: pip install ruff==0.11.0\n")
     errors = guard.check_ruff_pin(tmp_path, "family")
     assert len(errors) == 1
