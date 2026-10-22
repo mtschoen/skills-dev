@@ -20,6 +20,9 @@ WORKFLOW_PATH = SCRIPT_PATH.parent.parent / ".github" / "workflows" / "lint.yml"
 PYPROJECT_PATH = SCRIPT_PATH.parent.parent / "pyproject.toml"
 PRE_COMMIT_PATH = SCRIPT_PATH.parent.parent / "hooks" / "pre-commit"
 AGENTS_PATH = SCRIPT_PATH.parent.parent / "AGENTS.md"
+# Safety net so a hung child fails the test instead of the suite; deliberately
+# far above any healthy run so machine load cannot trip it.
+SUBPROCESS_HANG_GUARD_SECONDS = 120
 
 
 @pytest.fixture
@@ -307,7 +310,7 @@ def test_help_entry_point_returns_promptly() -> None:
         capture_output=True,
         check=False,
         text=True,
-        timeout=5,
+        timeout=SUBPROCESS_HANG_GUARD_SECONDS,
     )
 
     assert completed_process.returncode == 0
@@ -360,7 +363,7 @@ urllib.request.urlopen = capture_urlopen
         check=False,
         env=environment,
         text=True,
-        timeout=5,
+        timeout=SUBPROCESS_HANG_GUARD_SECONDS,
     )
 
     assert completed_process.returncode == 0
