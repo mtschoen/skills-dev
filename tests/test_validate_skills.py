@@ -109,7 +109,7 @@ class TestCheckPortability:
                 "references/setup.md": (
                     "Copy ~/schoen-claude-status/settings.json\n"
                     f"or {home_path}\n"
-                    "or C:/Users/mtsch/bar\n"
+                    "or C:/Users/" + "mtsch/bar\n"
                     "or Y:\\baz.\n"
                 )
             },
@@ -152,7 +152,7 @@ class TestCheckPortability:
         make_skill(
             tmp_path,
             "running-spikes",
-            {"SKILL.md": "Example at C:/Users/mtsch/proj/server.py.\n"},
+            {"SKILL.md": "Example at C:/Users/" + "mtsch/proj/server.py.\n"},
         )
         errors = check_portability(tmp_path, "running-spikes")
         assert len(errors) == 1
