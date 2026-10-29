@@ -6,15 +6,15 @@ A workspace for developing agent skills - reusable capabilities for AI coding as
 
 Three family submodules, each with its own thesis for why its skills belong together (see each family's own `README.md` for the full argument):
 
-**`completion-discipline`** (7 skills) - what an agent owes the work at the point it stops: `maintaining-full-coverage` (hold the coverage/lint bar, never lower it silently), `smoke-test`, `docs-update`, `escalate-over-shortcut`, `wrap` (the session-closing ritual: externalize memory, leave every repo clean), `reconcile-tasks`, `project-maintenance`.
+**`completion-discipline`** (9 skills) - what an agent owes the work at the point it stops: `maintaining-full-coverage` (hold the coverage/lint bar, never lower it silently), `smoke-test`, `docs-update`, `escalate-over-shortcut`, `wrap` (the session-closing ritual: externalize memory, leave every repo clean), `idle-wrap`, `reconcile-tasks`, `project-maintenance`, `machine-maintenance`.
 
 **`working-method`** (10 skills) - habits applied while the work is happening, not after it: `research-first`, `running-spikes`, `pushback`, `effective-refactor`, `writing-tests` (what makes a test a good one, and how a suite stays affordable), `fast-tests`, `using-a-debugger`, `using-a-decompiler` (read a compiled artifact statically, after asking whether it is yours to read), `fixing-desktop-ui-bugs` (reproduce and measure a GUI bug on an attended desktop without touching its keyboard), `filing-issues`.
 
-**`orchestration`** (6 skills) - what changes when work outgrows one agent, one machine, or one budget: `agent-remote`, `external-harness-routing`, `fleet-orchestration`, `review-in-parallel-pipelines`, `project-lock`, `cost-estimator`.
+**`orchestration`** (11 skills) - what changes when work outgrows one agent, one machine, or one budget: `agent-remote`, `remote-handoff`, `external-harness-routing`, `fleet-orchestration`, `review-in-parallel-pipelines`, `project-lock`, `cost-estimator`, and the project-tracker CLI skills `project-tracker-cli`, `find-task`, `capture-idea`, `promote-project`.
 
 Each skill directory's `SKILL.md` frontmatter carries the one-line trigger description, which is the authoritative catalog.
 
-A skill whose value collapses without a specific tool ships alongside that tool instead of living here: `capture-idea`, `find-task`, and `promote-project` at `packages/project_tracker/skills/`, `check-memory` and `memory-cleanup` at `packages/replica/skills/`, and `progress-beacon` at `satellites/agent-statusline/skills/`, all in the [schoen-lab](https://github.com/mtschoen/schoen-lab) monorepo. See `AGENTS.md` ("Why families, not one repository per skill or a single flat repo" and "A skill that belongs with its tool, not here") for the boundary reasoning behind both the family split and this placement.
+A skill whose value collapses without a specific tool ships alongside that tool instead of living here: `check-memory` and `memory-cleanup` at `packages/replica/skills/`, and `progress-beacon` at `satellites/agent-statusline/skills/`, all in the [schoen-lab](https://github.com/mtschoen/schoen-lab) monorepo. See `AGENTS.md` ("Why families, not one repository per skill or a single flat repo" and "A skill that belongs with its tool, not here") for the boundary reasoning behind both the family split and this placement.
 
 ## Cloning
 
